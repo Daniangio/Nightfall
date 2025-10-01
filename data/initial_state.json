@@ -1,5 +1,5 @@
 {
-    "turn": 8,
+    "turn": 44,
     "game_map": {
         "width": 16,
         "height": 8,
@@ -979,10 +979,7 @@
                                 "x": 4,
                                 "y": 0
                             },
-                            "building": {
-                                "type": "FARM",
-                                "level": 1
-                            }
+                            "building": null
                         },
                         {
                             "terrain": "GRASS",
@@ -990,10 +987,7 @@
                                 "x": 5,
                                 "y": 0
                             },
-                            "building": {
-                                "type": "FARM",
-                                "level": 1
-                            }
+                            "building": null
                         }
                     ],
                     [
@@ -1011,7 +1005,10 @@
                                 "x": 1,
                                 "y": 1
                             },
-                            "building": null
+                            "building": {
+                                "type": "LUMBER_MILL",
+                                "level": 1
+                            }
                         },
                         {
                             "terrain": "FOREST_PLOT",
@@ -1019,7 +1016,10 @@
                                 "x": 2,
                                 "y": 1
                             },
-                            "building": null
+                            "building": {
+                                "type": "LUMBER_MILL",
+                                "level": 1
+                            }
                         },
                         {
                             "terrain": "IRON_DEPOSIT",
@@ -1027,7 +1027,10 @@
                                 "x": 3,
                                 "y": 1
                             },
-                            "building": null
+                            "building": {
+                                "type": "IRON_MINE",
+                                "level": 1
+                            }
                         },
                         {
                             "terrain": "GRASS",
@@ -1035,10 +1038,7 @@
                                 "x": 4,
                                 "y": 1
                             },
-                            "building": {
-                                "type": "FARM",
-                                "level": 1
-                            }
+                            "building": null
                         },
                         {
                             "terrain": "GRASS",
@@ -1048,7 +1048,7 @@
                             },
                             "building": {
                                 "type": "FARM",
-                                "level": 1
+                                "level": 2
                             }
                         }
                     ],
@@ -1067,7 +1067,10 @@
                                 "x": 1,
                                 "y": 2
                             },
-                            "building": null
+                            "building": {
+                                "type": "LUMBER_MILL",
+                                "level": 1
+                            }
                         },
                         {
                             "terrain": "FOREST_PLOT",
@@ -1075,7 +1078,10 @@
                                 "x": 2,
                                 "y": 2
                             },
-                            "building": null
+                            "building": {
+                                "type": "LUMBER_MILL",
+                                "level": 1
+                            }
                         },
                         {
                             "terrain": "IRON_DEPOSIT",
@@ -1083,7 +1089,10 @@
                                 "x": 3,
                                 "y": 2
                             },
-                            "building": null
+                            "building": {
+                                "type": "IRON_MINE",
+                                "level": 1
+                            }
                         },
                         {
                             "terrain": "GRASS",
@@ -1091,10 +1100,7 @@
                                 "x": 4,
                                 "y": 2
                             },
-                            "building": {
-                                "type": "FARM",
-                                "level": 1
-                            }
+                            "building": null
                         },
                         {
                             "terrain": "GRASS",
@@ -1131,7 +1137,10 @@
                                 "x": 2,
                                 "y": 3
                             },
-                            "building": null
+                            "building": {
+                                "type": "FARM",
+                                "level": 2
+                            }
                         },
                         {
                             "terrain": "GRASS",
@@ -1155,7 +1164,10 @@
                                 "x": 5,
                                 "y": 3
                             },
-                            "building": null
+                            "building": {
+                                "type": "FARM",
+                                "level": 2
+                            }
                         }
                     ],
                     [
@@ -1211,9 +1223,9 @@
                 ]
             },
             "resources": {
-                "food": 330,
-                "wood": 200,
-                "iron": 50
+                "food": 1328,
+                "wood": 460,
+                "iron": 3040
             },
             "build_queue": []
         }

@@ -1,5 +1,6 @@
 from nightfall_engine.state.game_state import GameState
-from nightfall_engine.common.enums import BuildingType
+from nightfall_engine.common.datatypes import Resources
+from nightfall_engine.common.game_data import BUILDING_DATA
 
 class Simulator:
     """Handles the turn resolution logic."""
@@ -10,28 +11,59 @@ class Simulator:
         """
         print(f"\n--- Simulating Turn {game_state.turn} -> {game_state.turn + 1} ---")
         
-        # 1. Process build queues (one per city)
+        # 1. Process ALL build queue actions for each city
         print("1. Processing build queues...")
         for city in game_state.cities.values():
-            if city.build_queue:
-                action_to_execute = city.build_queue.pop(0) # Get and remove first action
-                print(f"  - Executing for {city.name}: {action_to_execute}")
-                action_to_execute.execute(game_state)
+            queue_to_process = list(city.build_queue)
+            city.build_queue.clear()
             
-        # 2. Generate resources
+            for action in queue_to_process:
+                print(f"  - Executing for {city.name}: {action}")
+                if not action.execute(game_state):
+                    print(f"  - WARNING: Action {action} failed server-side validation.")
+            
+        # 2. Generate resources with adjacency bonus
         print("2. Generating resources...")
         for city in game_state.cities.values():
-            building_levels = city.get_total_building_levels()
-            farm_level = building_levels.get(BuildingType.FARM, 0)
+            total_production = Resources()
             
-            food_gen = farm_level * 5
-            # Add other resource generation here
-            
-            city.resources.food += food_gen
-            if food_gen > 0:
-                print(f"  - {city.name} generated: Food +{food_gen}")
+            # Get 8 adjacent tiles from world map
+            adjacent_world_tiles = []
+            for dx in range(-1, 2):
+                for dy in range(-1, 2):
+                    if dx == 0 and dy == 0: continue
+                    tile = game_state.game_map.get_tile(city.position.x + dx, city.position.y + dy)
+                    if tile:
+                        adjacent_world_tiles.append(tile)
 
-        # ... other simulation steps ...
+            # Calculate production for each building inside the city
+            for row in city.city_map.tiles:
+                for tile in row:
+                    if not tile.building: continue
+                    
+                    b_type = tile.building.type
+                    b_level = tile.building.level
+                    b_data = BUILDING_DATA.get(b_type, {})
+
+                    if 'production' in b_data:
+                        base_prod = b_data['production'].get(b_level, Resources())
+                        
+                        # Calculate adjacency bonus
+                        total_bonus_pct = 0.0
+                        if 'adjacency_bonus' in b_data:
+                            for world_tile in adjacent_world_tiles:
+                                bonus = b_data['adjacency_bonus'].get(world_tile.terrain, 0.0)
+                                total_bonus_pct += bonus
+                        
+                        final_prod = Resources(
+                            food=int(base_prod.food * (1 + total_bonus_pct)),
+                            wood=int(base_prod.wood * (1 + total_bonus_pct)),
+                            iron=int(base_prod.iron * (1 + total_bonus_pct)),
+                        )
+                        total_production += final_prod
+            
+            city.resources += total_production
+            print(f"  - {city.name} generated: Food +{total_production.food}, Wood +{total_production.wood}, Iron +{total_production.iron}")
 
         game_state.turn += 1
         print("--- Turn simulation complete. ---")

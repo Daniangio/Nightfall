@@ -3,14 +3,14 @@ from typing import Dict
 from nightfall_engine.components.map import GameMap
 from nightfall_engine.components.player import Player
 from nightfall_engine.components.city import City
-# We need to import the action classes for deserialization
-from nightfall_engine.actions.city_actions import BuildBuildingAction
+from nightfall_engine.actions.city_actions import BuildBuildingAction, UpgradeBuildingAction, DemolishAction
 
 class GameState:
     """A container for the entire state of the game world."""
     ACTION_CLASS_MAP = {
         'BuildBuildingAction': BuildBuildingAction,
-        # Add other action classes here as they are created
+        'UpgradeBuildingAction': UpgradeBuildingAction,
+        'DemolishAction': DemolishAction,
     }
 
     def __init__(self, game_map: GameMap, players: Dict[str, Player], cities: Dict[str, City], turn: int = 0):
