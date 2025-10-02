@@ -1,8 +1,10 @@
+from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
-from nightfall_engine.common.enums import BuildingType, CityTerrainType
-from nightfall_engine.common.datatypes import Resources, Position
+from typing import List, Optional
 from nightfall_engine.actions.action import Action
+from nightfall_engine.common.datatypes import Position, Resources
+from nightfall_engine.common.enums import BuildingType, CityTerrainType
+from nightfall_engine.common.game_data import BUILDING_DATA
 
 @dataclass
 class Building:
@@ -10,29 +12,39 @@ class Building:
     type: BuildingType
     level: int = 1
 
-    def to_dict(self):
+    def deep_copy(self) -> Building:
+        return Building(self.type, self.level)
+
+    def to_dict(self) -> dict:
         return {'type': self.type.name, 'level': self.level}
 
     @classmethod
-    def from_dict(cls, data):
+    def from_dict(cls, data: dict) -> Building:
         return cls(BuildingType[data['type']], data['level'])
 
 @dataclass
 class CityTile:
-    """Represents a single tile/plot within a city."""
+    """Represents a single tile within a city's grid."""
     terrain: CityTerrainType
     position: Position
     building: Optional[Building] = None
 
-    def to_dict(self):
+    def deep_copy(self) -> CityTile:
+        return CityTile(
+            terrain=self.terrain,
+            position=self.position,
+            building=self.building.deep_copy() if self.building else None
+        )
+
+    def to_dict(self) -> dict:
         return {
             'terrain': self.terrain.name,
             'position': self.position.__dict__,
             'building': self.building.to_dict() if self.building else None
         }
-    
+
     @classmethod
-    def from_dict(cls, data):
+    def from_dict(cls, data: dict) -> CityTile:
         return cls(
             CityTerrainType[data['terrain']],
             Position(**data['position']),
@@ -40,7 +52,7 @@ class CityTile:
         )
 
 class CityMap:
-    """Represents the grid layout of a city."""
+    """Represents the grid of tiles within a city."""
     TERRAIN_MAPPING = {
         'G': CityTerrainType.GRASS,
         'F': CityTerrainType.FOREST_PLOT,
@@ -51,28 +63,42 @@ class CityMap:
     def __init__(self, width: int, height: int):
         self.width = width
         self.height = height
-        self.tiles: List[List[CityTile]] = [[None for _ in range(width)] for _ in range(height)]
+        # First, create the grid with default grass tiles
+        self.tiles: List[List[CityTile]] = [
+            [CityTile(terrain=CityTerrainType.GRASS, position=Position(x, y)) for y in range(height)]
+            for x in range(width)
+        ]
+        # Then, place the Citadel on the newly created central tile
+        citadel_pos = Position(width // 2, height // 2)
+        self.get_tile(citadel_pos.x, citadel_pos.y).building = Building(BuildingType.CITADEL, 1)
 
     def get_tile(self, x: int, y: int) -> Optional[CityTile]:
         if 0 <= x < self.width and 0 <= y < self.height:
-            return self.tiles[y][x]
+            return self.tiles[x][y]
         return None
 
+    def deep_copy(self) -> CityMap:
+        new_map = CityMap(self.width, self.height)
+        new_map.tiles = [[tile.deep_copy() for tile in row] for row in self.tiles]
+        return new_map
+
     @classmethod
-    def load_from_file(cls, filepath: str):
-        """Loads a city layout from a text file."""
+    def load_from_file(cls, filepath: str) -> CityMap:
+        """Loads a city map layout from a text file."""
         with open(filepath, 'r') as f:
             lines = [line.strip() for line in f.readlines()]
         
         height = len(lines)
         width = len(lines[0]) if height > 0 else 0
         
+        # Create a new map, which will have a Citadel by default.
         city_map = cls(width, height)
         for y, line in enumerate(lines):
             for x, char in enumerate(line):
                 terrain = cls.TERRAIN_MAPPING.get(char, CityTerrainType.GRASS)
-                city_map.tiles[y][x] = CityTile(terrain, Position(x, y))
+                city_map.get_tile(x, y).terrain = terrain # Update terrain of the existing tile
         
+        print(f"Loaded city map of size {width}x{height} from {filepath}")
         return city_map
     
     def to_dict(self):
@@ -85,13 +111,13 @@ class CityMap:
     @classmethod
     def from_dict(cls, data):
         city_map = cls(data['width'], data['height'])
-        city_map.tiles = [[CityTile.from_dict(t_data) for t_data in row] for row in data['tiles']]
+        city_map.tiles = [[CityTile.from_dict(t_data) for t_data in col] for col in data['tiles']]
         return city_map
 
 
 @dataclass
 class City:
-    """Represents a player-owned city, now with an internal grid."""
+    """Represents a player's city."""
     id: str
     name: str
     owner_id: str
@@ -99,17 +125,43 @@ class City:
     city_map: CityMap
     resources: Resources = field(default_factory=Resources)
     build_queue: List[Action] = field(default_factory=list)
+    num_buildings: int = 0
+    max_buildings: int = 0
+    action_points: int = 0
+    max_action_points: int = 0
 
-    def get_total_building_levels(self) -> Dict[BuildingType, int]:
-        """Aggregates building levels from across the city map."""
-        levels = {}
+    def __post_init__(self):
+        """Called after the dataclass is initialized."""
+        # Ensure stats are calculated and AP is full on creation.
+        self.update_stats_from_citadel()
+        if self.action_points == 0: # Only fill AP if it's at the default, not from loading a save
+            self.action_points = self.max_action_points
+
+    def update_stats_from_citadel(self):
+        """Recalculates city-wide stats based on the Citadel's level."""
+        citadel = None
+        num_buildings = 0
         for row in self.city_map.tiles:
             for tile in row:
                 if tile.building:
-                    levels[tile.building.type] = levels.get(tile.building.type, 0) + tile.building.level
-        return levels
+                    num_buildings += 1
+                    if tile.building.type == BuildingType.CITADEL:
+                        citadel = tile.building
+        
+        self.num_buildings = num_buildings
+        if citadel:
+            citadel_stats = BUILDING_DATA[BuildingType.CITADEL]['provides'].get(citadel.level, {})
+            self.max_buildings = citadel_stats.get('max_buildings', 0)
+            self.max_action_points = citadel_stats.get('action_points', 0)
 
-    def to_dict(self):
+    def deep_copy(self) -> City:
+        new_city = City(self.id, self.name, self.position, self.city_map.deep_copy())
+        new_city.resources = Resources(self.resources.food, self.resources.wood, self.resources.iron)
+        new_city.action_points = self.action_points
+        new_city.update_stats_from_citadel() # Recalculate to be safe
+        return new_city
+
+    def to_dict(self) -> dict:
         return {
             'id': self.id,
             'name': self.name,
@@ -117,24 +169,30 @@ class City:
             'position': self.position.__dict__,
             'city_map': self.city_map.to_dict(),
             'resources': self.resources.__dict__,
-            'build_queue': [action.to_dict() for action in self.build_queue]
+            'build_queue': [action.to_dict() for action in self.build_queue],
+            'action_points': self.action_points
         }
-    
+
     @classmethod
-    def from_dict(cls, data, action_class_map):
+    def from_dict(cls, data: dict, action_class_map: dict) -> City:
         # We need a map of action names to classes to deserialize the queue
         queue = []
         for action_data in data.get('build_queue', []):
             action_class = action_class_map.get(action_data['action_type'])
             if action_class:
                 queue.append(action_class.from_dict(action_data))
-
-        return cls(
+        city = cls(
             id=data['id'],
             name=data['name'],
             owner_id=data['owner_id'],
             position=Position(**data['position']),
             city_map=CityMap.from_dict(data['city_map']),
             resources=Resources(**data['resources']),
+            action_points=data.get('action_points', 0),
             build_queue=queue
         )
+        
+        # After loading, stats need to be recalculated from the loaded map state
+        city.update_stats_from_citadel()
+        
+        return city

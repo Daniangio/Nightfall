@@ -82,10 +82,14 @@ class Renderer:
         self.draw_text(f"Turn: {game_state.turn}", (ui_panel_rect.x + 20, y), self.font_m)
         y += 80
         
+        # --- Resources & City Stats ---
+        stats_x_offset = ui_panel_rect.x + 220
         res = city.resources
         self.draw_text(f"Food: {res.food} (+{production.food})", (ui_panel_rect.x + 20, y), self.font_s)
+        self.draw_text(f"Action Points: {city.action_points} / {city.max_action_points}", (stats_x_offset, y), self.font_s)
         y += 25
         self.draw_text(f"Wood: {res.wood} (+{production.wood})", (ui_panel_rect.x + 20, y), self.font_s)
+        self.draw_text(f"Buildings: {city.num_buildings} / {city.max_buildings}", (stats_x_offset, y), self.font_s)
         y += 25
         self.draw_text(f"Iron: {res.iron} (+{production.iron})", (ui_panel_rect.x + 20, y), self.font_s)
         y += 40

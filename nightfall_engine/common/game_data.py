@@ -3,11 +3,30 @@ from nightfall_engine.common.datatypes import Resources
 
 # Central repository for game balance numbers
 BUILDING_DATA = {
-    BuildingType.CITADEL: {}, # No cost, cannot be built
-    BuildingType.FARM: {
-        'build': {'cost': Resources(food=0, wood=50, iron=10)},
+    BuildingType.CITADEL: {
+        'action_point_cost': 2, # Upgrading the Citadel is expensive
+        'production': { # Base resource flow
+            1: Resources(food=5, wood=5, iron=2),
+            2: Resources(food=7, wood=7, iron=3),
+            3: Resources(food=10, wood=10, iron=5),
+        },
+        'provides': { # Stats provided by the Citadel at each level
+            1: {'max_buildings': 10, 'action_points': 3},
+            2: {'max_buildings': 15, 'action_points': 4},
+            3: {'max_buildings': 20, 'action_points': 5},
+        },
         'upgrade': {
-            1: {'cost': Resources(food=0, wood=80, iron=25)},
+            # Level 1 is the starting level, so we define the cost to get to level 2
+            2: {'cost': Resources(food=100, wood=100, iron=50)},
+            3: {'cost': Resources(food=250, wood=250, iron=120)},
+        },
+    },
+    BuildingType.FARM: {
+        'action_point_cost': 1,
+        'build': {
+            'cost': Resources(food=0, wood=50, iron=10),
+        },
+        'upgrade': {
             2: {'cost': Resources(food=0, wood=130, iron=40)},
             3: {'cost': Resources(food=0, wood=180, iron=55)},
             4: {'cost': Resources(food=0, wood=230, iron=70)},
@@ -29,7 +48,6 @@ BUILDING_DATA = {
             8: Resources(food=46, wood=0, iron=0),
             9: Resources(food=52, wood=0, iron=0),
             10: Resources(food=58, wood=0, iron=0),
-            11: Resources(food=64, wood=0, iron=0),
         },
         'adjacency_bonus': {
             CityTerrainType.WATER.name: 0.25, # +25% production for each adjacent Water tile
@@ -37,9 +55,11 @@ BUILDING_DATA = {
         }
     },
     BuildingType.LUMBER_MILL: {
-        'build': {'cost': Resources(food=0, wood=30, iron=20)},
+        'action_point_cost': 1,
+        'build': {
+            'cost': Resources(food=0, wood=30, iron=20),
+        },
         'upgrade': {
-            1: {'cost': Resources(food=0, wood=60, iron=35)},
             2: {'cost': Resources(food=0, wood=90, iron=50)},
             3: {'cost': Resources(food=0, wood=120, iron=65)},
             4: {'cost': Resources(food=0, wood=150, iron=80)},
@@ -61,16 +81,17 @@ BUILDING_DATA = {
             8: Resources(food=0, wood=40, iron=0),
             9: Resources(food=0, wood=45, iron=0),
             10: Resources(food=0, wood=50, iron=0),
-            11: Resources(food=0, wood=55, iron=0),
         },
         'adjacency_bonus': {
             CityTerrainType.FOREST_PLOT.name: 0.20, # +20% production for each adjacent Forest Plot
         }
     },
     BuildingType.IRON_MINE: {
-        'build': {'cost': Resources(food=0, wood=60, iron=30)},
+        'action_point_cost': 1,
+        'build': {
+            'cost': Resources(food=0, wood=60, iron=30),
+        },
         'upgrade': {
-            1: {'cost': Resources(food=0, wood=100, iron=50)},
             2: {'cost': Resources(food=0, wood=150, iron=75)},
             3: {'cost': Resources(food=0, wood=200, iron=100)},
             4: {'cost': Resources(food=0, wood=250, iron=125)},
@@ -92,7 +113,6 @@ BUILDING_DATA = {
             8: Resources(food=0, wood=0, iron=40),
             9: Resources(food=0, wood=0, iron=45),
             10: Resources(food=0, wood=0, iron=50),
-            11: Resources(food=0, wood=0, iron=55),
         },
         'adjacency_bonus': {
             CityTerrainType.IRON_DEPOSIT.name: 0.20, # +20% production for each adjacent Iron Deposit
@@ -101,5 +121,5 @@ BUILDING_DATA = {
 }
 
 # Cost to demolish any building or clear a resource plot
-DEMOLISH_COST_BUILDING = Resources(food=10, wood=10, iron=0)
-DEMOLISH_COST_RESOURCE = Resources(food=40, wood=40, iron=0)
+DEMOLISH_COST_BUILDING = {'cost': Resources(food=10, wood=10, iron=0), 'action_point_cost': 1}
+DEMOLISH_COST_RESOURCE = {'cost': Resources(food=40, wood=40, iron=0), 'action_point_cost': 1}

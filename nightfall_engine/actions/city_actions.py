@@ -43,20 +43,28 @@ class BuildBuildingAction(Action):
         
         # Correctly access the build cost
         build_data = BUILDING_DATA.get(self.building_type, {}).get('build', {})
+        ap_cost = BUILDING_DATA.get(self.building_type, {}).get('action_point_cost', 1)
         if 'cost' not in build_data:
             print(f"[ACTION FAILED] No build cost defined for {self.building_type.value}.")
             return False
         cost = build_data['cost']
 
         # --- Validation ---
+        if city.action_points < ap_cost:
+            print(f"[ACTION FAILED] Not enough Action Points to build (needs {ap_cost}).")
+            return False
+        if city.num_buildings >= city.max_buildings:
+            print(f"[ACTION FAILED] City is at its maximum building limit ({city.max_buildings}).")
+            return False
         if tile.building:
             print(f"[ACTION FAILED] Tile at {self.position} already has a building.")
             return False
-        if city.resources.food < cost.food or city.resources.wood < cost.wood or city.resources.iron < cost.iron:
+        if not city.resources.can_afford(cost):
             print(f"[ACTION FAILED] Not enough resources to build {self.building_type.value}.")
             return False
         
         # --- Execution ---
+        city.action_points -= ap_cost
         city.resources -= cost
         tile.building = Building(self.building_type, 1)
         print(f"[ACTION SUCCESS] Built {self.building_type.value} at {self.position}.")
@@ -105,17 +113,23 @@ class UpgradeBuildingAction(Action):
         building_data = BUILDING_DATA[building.type]
         next_level = building.level + 1
 
-        # Correctly access the upgrade cost
+        # --- Validation ---
+        ap_cost = building_data.get('action_point_cost', 1)
+        if city.action_points < ap_cost:
+            print(f"[ACTION FAILED] Not enough Action Points to upgrade (needs {ap_cost}).")
+            return False
         if 'upgrade' not in building_data or next_level not in building_data['upgrade']:
             print(f"[ACTION FAILED] Building at {self.position} is at max level.")
             return False
         
         cost = building_data['upgrade'][next_level]['cost']
 
-        if city.resources.food < cost.food or city.resources.wood < cost.wood or city.resources.iron < cost.iron:
+        if not city.resources.can_afford(cost):
             print(f"[ACTION FAILED] Not enough resources to upgrade {building.type.value}.")
             return False
 
+        # --- Execution ---
+        city.action_points -= ap_cost
         city.resources -= cost
         building.level = next_level
         print(f"[ACTION SUCCESS] Upgraded {building.type.value} at {self.position} to level {next_level}.")
@@ -164,12 +178,19 @@ class DemolishAction(Action):
             return False
 
         # Determine the correct cost based on what is being demolished
-        cost = DEMOLISH_COST_BUILDING if can_demolish_building else DEMOLISH_COST_RESOURCE
+        demolish_data = DEMOLISH_COST_BUILDING if can_demolish_building else DEMOLISH_COST_RESOURCE
+        cost = demolish_data['cost']
+        ap_cost = demolish_data['action_point_cost']
 
+        # --- Validation ---
+        if city.action_points < ap_cost:
+            print(f"[ACTION FAILED] Not enough Action Points to demolish (needs {ap_cost}).")
+            return False
         if not city.resources.can_afford(cost):
             print(f"[ACTION FAILED] Not enough resources to demolish.")
             return False
 
+        city.action_points -= ap_cost
         city.resources -= cost
 
         if can_demolish_building:

@@ -81,13 +81,16 @@ class UIManager:
         self.selected_city_tile = None
 
     def _format_cost(self, cost: Optional[Position]) -> str:
-        """Formats a Resources object into a string like '(F:10 W:20)'."""
+        """Formats a Resources object into a string like '(F:10 W:20 I:5)'."""
         if not cost: return ""
         parts = []
         if cost.food > 0: parts.append(f"F:{cost.food}")
         if cost.wood > 0: parts.append(f"W:{cost.wood}")
         if cost.iron > 0: parts.append(f"I:{cost.iron}")
         return f" ({' '.join(parts)})" if parts else ""
+    
+    def _format_ap_cost(self, ap_cost: int) -> str:
+        return f" [AP:{ap_cost}]"
 
     def _get_context_menu_options_data(self, tile, game_state: GameState, city_id: str, action_queue: list, grid_pos: Position):
         """Generates a list of possible actions for a tile."""
@@ -106,68 +109,97 @@ class UIManager:
                 'disabled_reason': "An action for this tile is already in the queue."
             }]
 
-
         if tile.building:
+            # --- Upgrade Action (for all buildings including Citadel) ---
+            next_level = tile.building.level + 1
+            building_data = BUILDING_DATA.get(tile.building.type, {})
+            upgrade_data = building_data.get('upgrade', {}).get(next_level)
+            ap_cost_upgrade = building_data.get('action_point_cost', 1)
+
+            if upgrade_data:
+                cost = upgrade_data.get('cost')
+                can_afford_res = player_resources.can_afford(cost)
+                can_afford_ap = city.action_points >= ap_cost_upgrade
+                can_upgrade = can_afford_res and can_afford_ap
+                
+                reason = ""
+                if not can_afford_res: reason = "Not enough resources."
+                elif not can_afford_ap: reason = "Not enough Action Points."
+
+                upgrade_option = {
+                    'text': f"Upgrade (Lvl {next_level}){self._format_cost(cost)}{self._format_ap_cost(ap_cost_upgrade)}",
+                    'action': 'upgrade',
+                    'is_enabled': can_upgrade,
+                    'disabled_reason': reason
+                }
+                options.append(upgrade_option)
+            else: # Max level reached
+                options.append({
+                    'text': "Upgrade (Max Level)",
+                    'action': 'upgrade',
+                    'is_enabled': False,
+                    'disabled_reason': "This building has reached its maximum level."
+                })
+
+            # --- Demolish Action (not for Citadel) ---
             if tile.building.type != BuildingType.CITADEL:
-                # Upgrade action
-                next_level = tile.building.level + 1
-                upgrade_data = BUILDING_DATA.get(tile.building.type, {}).get('upgrade', {}).get(next_level)
-
-                if upgrade_data:
-                    cost = upgrade_data.get('cost')
-                    can_upgrade = player_resources.can_afford(cost)
-                    upgrade_option = {
-                        'text': f"Upgrade (Lvl {next_level}){self._format_cost(cost)}",
-                        'action': 'upgrade',
-                        'is_enabled': can_upgrade
-                    }
-                    if not can_upgrade:
-                        upgrade_option['disabled_reason'] = "Not enough resources."
-                    options.append(upgrade_option)
-                else: # Max level reached
-                    options.append({
-                        'text': "Upgrade (Max Level)",
-                        'action': 'upgrade',
-                        'is_enabled': False,
-                        'disabled_reason': "This building has reached its maximum level."
-                    })
-
                 # Demolish action
-                can_demolish = player_resources.can_afford(DEMOLISH_COST_BUILDING)
+                cost = DEMOLISH_COST_BUILDING['cost']
+                ap_cost = DEMOLISH_COST_BUILDING['action_point_cost']
+                can_afford_res = player_resources.can_afford(cost)
+                can_afford_ap = city.action_points >= ap_cost
+                can_demolish = can_afford_res and can_afford_ap
+
                 demolish_option = {
-                    'text': f"Demolish{self._format_cost(DEMOLISH_COST_BUILDING)}", 
+                    'text': f"Demolish{self._format_cost(cost)}{self._format_ap_cost(ap_cost)}", 
                     'action': 'demolish', 
                     'is_enabled': can_demolish}
                 if not can_demolish:
-                    demolish_option['disabled_reason'] = "Not enough resources."
+                    demolish_option['disabled_reason'] = "Not enough resources." if not can_afford_res else "Not enough Action Points."
                 options.append(demolish_option)
         else: # No building
             if tile.terrain == CityTerrainType.GRASS:
                 # Any production building can be built on grass
                 buildable = [BuildingType.FARM, BuildingType.LUMBER_MILL, BuildingType.IRON_MINE]
                 for b_type in buildable:
-                    build_cost = BUILDING_DATA.get(b_type, {}).get('build', {}).get('cost')
-                    can_build = build_cost and player_resources.can_afford(build_cost)
+                    building_data = BUILDING_DATA.get(b_type, {})
+                    build_cost = building_data.get('build', {}).get('cost')
+                    ap_cost = building_data.get('action_point_cost', 1)
+
+                    can_afford_res = build_cost and player_resources.can_afford(build_cost)
+                    can_afford_ap = city.action_points >= ap_cost
+                    has_building_slot = city.num_buildings < city.max_buildings
+                    can_build = can_afford_res and can_afford_ap and has_building_slot
+
+                    reason = ""
+                    if not has_building_slot: reason = "Building limit reached."
+                    elif not can_afford_res: reason = "Not enough resources."
+                    elif not can_afford_ap: reason = "Not enough Action Points."
+
                     building_name = b_type.name.replace('_', ' ').title()
                     build_option = {
-                        'text': f"Build {building_name}{self._format_cost(build_cost)}",
+                        'text': f"Build {building_name}{self._format_cost(build_cost)}{self._format_ap_cost(ap_cost)}",
                         'action': 'build',
                         'building_type': b_type,
-                        'is_enabled': can_build
+                        'is_enabled': can_build,
+                        'disabled_reason': reason
                     }
-                    if not can_build:
-                        build_option['disabled_reason'] = "Not enough resources."
                     options.append(build_option)
 
             elif tile.terrain in [CityTerrainType.FOREST_PLOT, CityTerrainType.IRON_DEPOSIT]:
                 # Demolishing plots
-                can_demolish = player_resources.can_afford(DEMOLISH_COST_RESOURCE)
+                cost = DEMOLISH_COST_RESOURCE['cost']
+                ap_cost = DEMOLISH_COST_RESOURCE['action_point_cost']
+                can_afford_res = player_resources.can_afford(cost)
+                can_afford_ap = city.action_points >= ap_cost
+                can_demolish = can_afford_res and can_afford_ap
+
                 demolish_option = {
-                    'text': f"Demolish Plot{self._format_cost(DEMOLISH_COST_RESOURCE)}", 
+                    'text': f"Demolish Plot{self._format_cost(cost)}{self._format_ap_cost(ap_cost)}", 
                     'action': 'demolish', 
                     'is_enabled': can_demolish}
                 if not can_demolish:
-                    demolish_option['disabled_reason'] = "Not enough resources."
+                    demolish_option['disabled_reason'] = "Not enough resources." if not can_afford_res else "Not enough Action Points."
                 options.append(demolish_option)
 
         return options

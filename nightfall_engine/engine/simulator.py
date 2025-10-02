@@ -28,6 +28,11 @@ class Simulator:
                 # we stop processing further actions in the queue for this prediction.
                 print(f"[PREDICTION] Action failed and broke the queue: {action}")
                 break
+            
+            # After a successful predicted action, update the city's stats
+            city = predicted_state.cities.get(action.city_id)
+            if city:
+                city.update_stats_from_citadel()
                 
         return predicted_state
 
@@ -38,20 +43,31 @@ class Simulator:
         Modifies the state in-place.
         """
         print(f"\n--- Simulating Turn {game_state.turn} -> {game_state.turn + 1} ---")
+
+        # 1. Replenish Action Points for all cities
+        print("1. Replenishing Action Points...")
+        for city in game_state.cities.values():
+            city.update_stats_from_citadel() # Ensure max AP is up-to-date
+            city.action_points = city.max_action_points
+            print(f"  - {city.name} now has {city.action_points}/{city.max_action_points} AP.")
         
-        # 1. Process build queues for each player/city
-        print("1. Processing build queues...")
+        # 2. Process build queues for each player/city
+        print("2. Processing build queues...")
         # We iterate through players to ensure actions are executed in a defined order
         # (though for this game, the order between players doesn't matter yet).
         for player in game_state.players.values():
             # The player's action_queue is set by the server from their received orders.
             for action in player.action_queue:
                 print(f"  - Executing for {player.name}: {action}")
-                action.execute(game_state) # Execute on the authoritative state
+                if action.execute(game_state): # Execute on the authoritative state
+                    # After a successful action, update city stats (e.g., if Citadel was upgraded)
+                    city = game_state.cities.get(action.city_id)
+                    if city:
+                        city.update_stats_from_citadel()
             player.action_queue.clear() # Clear queue after processing
             
-        # 2. Generate resources for all cities
-        print("2. Generating resources...")
+        # 3. Generate resources for all cities
+        print("3. Generating resources...")
         for city in game_state.cities.values():
             production = self.calculate_resource_production(game_state, city)
             city.resources += production
