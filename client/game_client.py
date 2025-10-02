@@ -1,70 +1,191 @@
 import pygame
-from client.renderer import Renderer
+import sys
+from client.network_client import NetworkClient
+from client.renderer import Renderer, SCREEN_WIDTH, SCREEN_HEIGHT
 from client.input_handler import InputHandler
 from client.ui_manager import UIManager
-from client.client_predictor import ClientPredictor
+from client.config import PLAYER_ID, CITY_ID
 from nightfall_engine.state.game_state import GameState
 from nightfall_engine.engine.simulator import Simulator
-from nightfall_engine.common.datatypes import Resources
-from client.config import PLAYER_ID, CITY_ID
-
 
 class GameClient:
-    """
-    Main client class. Owns the game loop and all major components.
-    """
-    def __init__(self, state_path: str, map_path: str):
-        self.state_path = state_path
-        self.map_path = map_path
-
-        # Core game and simulation objects
-        self.authoritative_state = GameState.load_from_json(state_path, map_path)
-        self.server_simulator = Simulator() # The "real" simulator
-
-        # Client-side components
-        self.predictor = ClientPredictor(self.authoritative_state)
-        self.player_city = self.authoritative_state.cities[CITY_ID]
-        self.action_queue = self.player_city.build_queue # Direct reference for now
-        
-        # Initialize pygame and client components
+    def __init__(self, host, port):
         pygame.init()
-        screen = pygame.display.set_mode((1200, 800))
-        
-        self.ui_manager = UIManager()
-        self.renderer = Renderer(screen)
-        self.input_handler = InputHandler(self)
+        self.screen_size = (SCREEN_WIDTH, SCREEN_HEIGHT)
+        self.screen = pygame.display.set_mode(self.screen_size)
+        pygame.display.set_caption("Project Nightfall Client")
+        self.clock = pygame.time.Clock()
 
-        self.running = True
+        # Client State
+        self.client_state = "LOBBY" # "LOBBY" or "IN_GAME"
+        self.available_sessions = {} # Populated by the server
+        self.lobby_timer = 0
+        
+        # Game State Management
+        self.server_state: GameState | None = None
+        self.predicted_state: GameState | None = None
+        self.action_queue = []
+
+        # Networking and Simulation
+        self.network_client = NetworkClient()
+        self.simulator = Simulator()
+
+        # Components
+        self.ui_manager = UIManager()
+        self.input_handler = InputHandler(PLAYER_ID, CITY_ID, self.ui_manager)
+        self.ui_manager.viewed_city_id = CITY_ID # Set the initial city to view
+        self.renderer = Renderer(self.screen)
+        
+        self.is_running = False
+        self.status_message = "Connecting..."
+        self.host = host
+        self.port = port
 
     def run(self):
-        """The main game loop."""
-        self.predictor.predict_turn(self.action_queue) # Initial prediction
-        while self.running:
-            self.input_handler.handle_events()
-            self.renderer.draw(self.predictor.predicted_state, self.ui_manager, self.predictor.predicted_production)
-            pygame.display.flip()
-        pygame.quit()
+        self.network_client.connect(self.host, self.port)
+        self.is_running = True
 
-    def add_action_to_queue(self, action):
-        """Adds an action and updates the prediction."""
-        self.action_queue.append(action)
-        self.predictor.predict_turn(self.action_queue)
+        while self.is_running:
+            events = pygame.event.get()
+            for event in events:
+                if event.type == pygame.QUIT:
+                    self.is_running = False
 
-    def remove_action_from_queue(self, index):
-        """Removes an action and updates the prediction."""
-        if 0 <= index < len(self.action_queue):
-            self.action_queue.pop(index)
-            self.predictor.predict_turn(self.action_queue)
+            self._handle_network_updates()
+            
+            if self.client_state == "LOBBY":
+                client_action = self.input_handler.handle_lobby_input(events, self.ui_manager)
+                if client_action:
+                    self._handle_client_action(client_action)
+            elif self.client_state == "IN_GAME" and self.predicted_state:
+                client_action = self.input_handler.handle_input(events, self.predicted_state, self.action_queue)
+                if client_action:
+                    self._handle_client_action(client_action)
+            
+            self._update_ui()
+            self._render()
+            self._tick()
 
-    def end_turn(self):
-        """Sends the queue to the server and gets the new authoritative state."""
-        print("\n>>> Client ending turn. Sending queue to server.")
-        self.player_city.build_queue = self.action_queue # Ensure the state has the latest queue
-        self.server_simulator.simulate_turn(self.authoritative_state)
-        self.authoritative_state.save_to_json(self.state_path)
+        self.shutdown()
+
+    def _handle_network_updates(self):
+        """Process all pending messages from the server."""
+        while not self.network_client.incoming_queue.empty():
+            message = self.network_client.incoming_queue.get()
+            msg_type = message.get("type")
+            payload = message.get("payload")
+
+            if msg_type == "initial_state" or msg_type == "state_update":
+                # The server is now the source of truth for the action queue on state updates
+                player_data = payload.get('players', {}).get(PLAYER_ID, {})
+                action_data = player_data.get('action_queue', [])
+                
+                self.server_state = GameState.from_dict(payload)
+                self.action_queue = self.server_state.players[PLAYER_ID].action_queue
+                self.client_state = "IN_GAME"
+                self.ui_manager.clear_lobby_buttons() # Clean up lobby UI state
+                # After receiving a new state, we must re-predict to see the effects of the queue.
+                self._repredict_state()
+                self.status_message = f"Turn: {self.server_state.turn}"
+            elif msg_type == "ack":
+                print(f"[CLIENT] Received ACK from server: {payload.get('message')}")
+                self.status_message = payload.get('message', self.status_message)
+            elif msg_type == "error":
+                print(f"[CLIENT] Received ERROR from server: {payload.get('message')}")
+                self.status_message = f"Error: {payload.get('message')}"
+            elif msg_type == "session_list":
+                self.available_sessions = payload
+                self.ui_manager.update_lobby_buttons(self.available_sessions)
+
+
+    def _handle_client_action(self, action: dict):
+        """Handle actions generated by the InputHandler."""
+        action_type = action.get("type")
         
-        # Reset for the new turn
+        if action_type == "add_action":
+            self.action_queue.append(action.get("action"))
+            self._send_orders()
+        elif action_type == "remove_action":
+            index = action.get("index")
+            if 0 <= index < len(self.action_queue):
+                self.action_queue.pop(index)
+                self._send_orders()
+        elif action_type == "end_day":
+            self.network_client.send_message({"command": "ready", "player_id": PLAYER_ID, "payload": {}})
+        elif action_type == "exit_session":
+            self.network_client.send_message({"command": "leave_session", "player_id": PLAYER_ID})
+            self._return_to_lobby()
+        elif action_type == "create_session":
+            self.network_client.send_message({"command": "create_session", "player_id": PLAYER_ID})
+        elif action_type == "join_session":
+            self.network_client.send_message({"command": "join_session", "payload": {"session_id": action.get("session_id"), "player_id": PLAYER_ID}})
+
+    def _send_orders(self):
+        """Sends the current action queue to the server and repredicts state."""
+        orders_data = [act.to_dict() for act in self.action_queue]
+        self.network_client.send_message({"command": "set_orders", "player_id": PLAYER_ID, "payload": orders_data})
+        self._repredict_state()
+
+    def _repredict_state(self):
+        """Recalculate the predicted state from the last known server state."""
+        if self.server_state:
+            self.predicted_state = self.simulator.predict_outcome(
+                self.server_state, self.action_queue, PLAYER_ID
+            )
+    
+    def _return_to_lobby(self):
+        """Resets client state to return to the lobby view."""
+        self.client_state = "LOBBY"
+        self.server_state = None
+        self.predicted_state = None
         self.action_queue.clear()
-        self.predictor.reset(self.authoritative_state)
-        self.ui_manager.selected_city_tile = None
-        print(">>> New turn started. Client state synchronized.")
+        self.status_message = "Welcome to the Lobby"
+
+    def _update_ui(self):
+        """Update the UI manager with the latest predicted state."""
+        if self.client_state != "IN_GAME" or not self.predicted_state:
+            return
+
+        city = self.predicted_state.players[PLAYER_ID].get_city(CITY_ID, self.predicted_state.cities)
+        if city:
+            # Correctly pass the full predicted state to the calculator
+            self.ui_manager.predicted_production = self.simulator.calculate_resource_production(
+                self.predicted_state, city
+            )
+        
+        self.ui_manager.update_action_queue_ui(self.action_queue)
+
+    def _render(self):
+        """Render the entire game screen based on the current client state."""
+        self.screen.fill((0, 0, 0)) # Black background
+        if self.client_state == "LOBBY":
+            self.renderer.draw_lobby_screen(self.ui_manager)
+
+        elif self.client_state == "IN_GAME" and self.predicted_state:
+            # Pass the correct production and action queue to the renderer
+            city = self.predicted_state.cities[CITY_ID]
+            self.renderer.draw(
+                game_state=self.predicted_state,
+                ui_manager=self.ui_manager,
+                production=self.ui_manager.predicted_production,
+                action_queue=self.action_queue
+            )
+        else:
+            self.renderer.draw_status_screen(self.status_message)
+
+        pygame.display.flip()
+
+    def _tick(self):
+        """Handles time-based events and clock ticking."""
+        self.clock.tick(60)
+        if self.client_state == "LOBBY":
+            self.lobby_timer += self.clock.get_time()
+            if self.lobby_timer >= 5000: # Refresh lobby every 5 seconds
+                self.network_client.send_message({"command": "list_sessions"})
+                self.lobby_timer = 0
+
+    def shutdown(self):
+        """Cleanly shut down the client."""
+        self.network_client.close()
+        pygame.quit()
+        sys.exit()

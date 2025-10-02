@@ -1,3 +1,4 @@
+from __future__ import annotations
 from dataclasses import dataclass
 
 @dataclass(frozen=True)
@@ -32,3 +33,12 @@ class Resources:
             self.wood - other.wood,
             self.iron - other.iron
         )
+
+    def can_afford(self, cost: Resources) -> bool:
+        """
+        Checks if this resource collection is sufficient to cover the given cost.
+
+        Args:
+            cost: A Resources object representing the cost to check against.
+        """
+        return self.food >= cost.food and self.wood >= cost.wood and self.iron >= cost.iron
