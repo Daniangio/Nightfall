@@ -22,7 +22,7 @@ class Renderer:
         self.font_s = pygame.font.Font(None, 24)
         self.font_m = pygame.font.Font(None, 32)
 
-    def draw(self, game_state, ui_manager, production):
+    def draw(self, game_state, ui_manager, production, action_queue):
         self.screen.fill(C_BLACK)
         pygame.display.set_caption(f"Project Nightfall - Turn {game_state.turn}")
         
@@ -30,7 +30,7 @@ class Renderer:
         
         self.draw_world_map(game_state.game_map, city.position)
         self.draw_city_view(city.city_map, ui_manager.selected_city_tile)
-        self.draw_ui_panel(game_state, city, production, ui_manager)
+        self.draw_ui_panel(game_state, city, production, ui_manager, action_queue)
         self.draw_context_menu(city, ui_manager)
 
     def draw_text(self, text, pos, font, color=C_WHITE):
@@ -74,7 +74,7 @@ class Renderer:
             rect = pygame.Rect(selected_tile.x * CITY_TILE_SIZE, SCREEN_HEIGHT - CITY_VIEW_HEIGHT + selected_tile.y * CITY_TILE_SIZE, CITY_TILE_SIZE, CITY_TILE_SIZE)
             pygame.draw.rect(self.screen, C_CYAN, rect, 3)
 
-    def draw_ui_panel(self, game_state, city, production, ui_manager):
+    def draw_ui_panel(self, game_state, city, production, ui_manager, action_queue):
         ui_panel_rect = pygame.Rect(WORLD_MAP_WIDTH, 0, UI_PANEL_WIDTH, SCREEN_HEIGHT)
         self.screen.fill(C_GRAY, ui_panel_rect)
 
@@ -92,26 +92,53 @@ class Renderer:
 
         self.draw_text(f"Build Queue:", (ui_panel_rect.x + 20, y), self.font_m)
         y += 40
-        for i, action in enumerate(city.build_queue):
+        for i, action in enumerate(action_queue):
             queue_item_y = 230 + i * 30
             item_rect = pygame.Rect(ui_panel_rect.x + 20, queue_item_y, UI_PANEL_WIDTH - 40, 25)
             pygame.draw.rect(self.screen, C_LIGHT_GRAY, item_rect, border_radius=5)
-            self.draw_text(f"{i+1}. {action}", (item_rect.x + 5, item_rect.y + 2), self.font_s, C_BLACK)
+            self.draw_text(f"{i+1}. {str(action)}", (item_rect.x + 5, item_rect.y + 2), self.font_s, C_BLACK)
             
             x_rect = ui_manager.get_queue_item_remove_rect(i)
             self.draw_text("X", (x_rect.x + 5, x_rect.y + 2), self.font_s, C_RED)
 
-    def draw_context_menu(self, city, ui_manager):
-        if not ui_manager.selected_city_tile: return
-        pos = ui_manager.selected_city_tile
-        if any(hasattr(a, 'position') and a.position == pos for a in city.build_queue): return
+        # Draw main action buttons
+        end_day_rect = ui_manager.buttons['end_day']
+        pygame.draw.rect(self.screen, C_GREEN, end_day_rect, border_radius=5)
+        self.draw_text("Ready (End Day)", (end_day_rect.x + 30, end_day_rect.y + 15), self.font_m)
 
-        tile = city.city_map.get_tile(pos.x, pos.y)
-        if not tile: return
-        
-        options = ui_manager.get_context_menu_options(tile)
-        for i, (text, _) in enumerate(options):
-            rect = ui_manager.get_context_menu_item_rect(i)
-            if rect:
-                pygame.draw.rect(self.screen, C_BLUE, rect, border_radius=5)
-                self.draw_text(text, (rect.x + 10, rect.y + 10), self.font_s)
+        exit_rect = ui_manager.buttons['exit_session']
+        pygame.draw.rect(self.screen, C_RED, exit_rect, border_radius=5)
+        self.draw_text("Exit to Lobby", (exit_rect.x + 45, exit_rect.y + 15), self.font_m)
+
+
+    def draw_context_menu(self, city, ui_manager):
+        if not ui_manager.context_menu:
+            return
+            
+        # Don't draw menu if an action is already queued for this tile
+        pos = ui_manager.context_menu['position']
+        if any(hasattr(a, 'position') and a.position == pos for a in city.build_queue):
+            return
+            
+        for option in ui_manager.context_menu['options']:
+            pygame.draw.rect(self.screen, C_BLUE, option['rect'], border_radius=5)
+            self.draw_text(option['text'], (option['rect'].x + 10, option['rect'].y + 10), self.font_s)
+    
+    def draw_status_screen(self, message):
+        self.screen.fill(C_BLACK)
+        self.draw_text(message, (self.screen.get_width() // 2 - 200, self.screen.get_height() // 2 - 50), self.font_m)
+
+    def draw_lobby_screen(self, ui_manager):
+        self.screen.fill(C_GRAY)
+        self.draw_text("Project Nightfall - Lobby", (100, 50), self.font_m, C_WHITE)
+
+        for name, rect in ui_manager.lobby_buttons.items():
+            pygame.draw.rect(self.screen, C_BLUE, rect, border_radius=5)
+            if name == "create":
+                text = "Create New Session"
+            else:
+                text = f"Join Session: {name}"
+            
+            text_surf = self.font_s.render(text, True, C_WHITE)
+            text_rect = text_surf.get_rect(center=rect.center)
+            self.screen.blit(text_surf, text_rect)

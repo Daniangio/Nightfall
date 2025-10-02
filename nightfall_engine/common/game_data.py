@@ -1,4 +1,4 @@
-from nightfall_engine.common.enums import BuildingType, TerrainType
+from nightfall_engine.common.enums import BuildingType, CityTerrainType
 from nightfall_engine.common.datatypes import Resources
 
 # Central repository for game balance numbers
@@ -16,8 +16,8 @@ BUILDING_DATA = {
             3: Resources(food=16, wood=0, iron=0),
         },
         'adjacency_bonus': {
-            TerrainType.LAKE: 0.25, # +25% production for each adjacent Lake
-            TerrainType.PLAINS: 0.05, # +5% production for each adjacent Plains
+            CityTerrainType.WATER.name: 0.25, # +25% production for each adjacent Water tile
+            CityTerrainType.GRASS.name: 0.05, # +5% production for each adjacent Grass tile
         }
     },
     BuildingType.LUMBER_MILL: {
@@ -30,7 +30,7 @@ BUILDING_DATA = {
             2: Resources(food=0, wood=10, iron=0),
         },
         'adjacency_bonus': {
-            TerrainType.FOREST: 0.20, # +20% production for each adjacent Forest
+            CityTerrainType.FOREST_PLOT.name: 0.20, # +20% production for each adjacent Forest Plot
         }
     },
     BuildingType.IRON_MINE: {
@@ -43,7 +43,7 @@ BUILDING_DATA = {
             2: Resources(food=0, wood=0, iron=10),
         },
         'adjacency_bonus': {
-            TerrainType.MOUNTAIN: 0.20, # +20% production for each adjacent Mountain
+            CityTerrainType.IRON_DEPOSIT.name: 0.20, # +20% production for each adjacent Iron Deposit
         }
     }
 }
