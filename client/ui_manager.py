@@ -1,5 +1,6 @@
 from typing import Optional
 from nightfall_engine.common.datatypes import Position
+from client.enums import ActiveView
 from nightfall_engine.common.enums import BuildingType, CityTerrainType
 from nightfall_engine.common.game_data import BUILDING_DATA, DEMOLISH_COST_BUILDING, DEMOLISH_COST_RESOURCE
 from nightfall_engine.actions.city_actions import BuildBuildingAction, UpgradeBuildingAction, DemolishAction
@@ -9,19 +10,39 @@ import pygame
 # ... (layout constants) ...
 WORLD_MAP_WIDTH = 600
 UI_PANEL_WIDTH = 600
+TOP_BAR_HEIGHT = 40
 
 class UIManager:
     def __init__(self):
         self.selected_city_tile: Optional[Position] = None
         self.context_menu: Optional[dict] = None
+        
         # UI State
+        self.active_view = ActiveView.WORLD_MAP
+        self.viewed_city_id: Optional[str] = None
         self.font_s = pygame.font.Font(None, 24)
         self.orders_sent = False
         self.is_ready = False
+        self.game_state_for_input: Optional[GameState] = None # Hack for input handler
+
+        # Camera and dragging state for map views
+        self.camera_offset = Position(0, 0)
+        self.city_camera_offset = Position(0, 0)
+        self.is_dragging = False
+        self.drag_start_pos = None
+        self.drag_start_camera_offset = None
+
         # Main UI buttons for click detection
         self.buttons = {
             "end_day": pygame.Rect(WORLD_MAP_WIDTH + 20, 500, 200, 50),
-            "exit_session": pygame.Rect(WORLD_MAP_WIDTH + 20, 560, 200, 50)
+            "exit_session": pygame.Rect(WORLD_MAP_WIDTH + UI_PANEL_WIDTH - 160, 5, 150, 30)
+        }
+        
+        # Top navigation bar
+        self.top_bar_rect = pygame.Rect(0, 0, WORLD_MAP_WIDTH, TOP_BAR_HEIGHT)
+        self.top_bar_buttons = {
+            "view_world": pygame.Rect(10, 5, 120, 30),
+            "view_city": pygame.Rect(140, 5, 120, 30)
         }
 
         # Action Queue UI State
@@ -31,15 +52,14 @@ class UIManager:
         # Lobby UI State
         self.lobby_buttons = {} # "create" or session_id -> rect
 
-    # ... (existing get_*_rect methods) ...
     def get_city_tile_rect(self, x, y):
-        from client.renderer import CITY_TILE_SIZE, SCREEN_HEIGHT, CITY_VIEW_HEIGHT
-        return pygame.Rect(x * CITY_TILE_SIZE, SCREEN_HEIGHT - CITY_VIEW_HEIGHT + y * CITY_TILE_SIZE, CITY_TILE_SIZE, CITY_TILE_SIZE)
+        from client.renderer import CITY_TILE_SIZE
+        return pygame.Rect(x * CITY_TILE_SIZE - self.city_camera_offset.x, y * CITY_TILE_SIZE - self.city_camera_offset.y + TOP_BAR_HEIGHT, CITY_TILE_SIZE, CITY_TILE_SIZE)
 
     def get_context_menu_pos(self, item_index=0):
         if not self.selected_city_tile: return (0,0)
-        from client.renderer import CITY_TILE_SIZE, SCREEN_HEIGHT, CITY_VIEW_HEIGHT
-        base_pos = ( (self.selected_city_tile.x + 1) * CITY_TILE_SIZE + 5, SCREEN_HEIGHT - CITY_VIEW_HEIGHT + self.selected_city_tile.y * CITY_TILE_SIZE )
+        from client.renderer import CITY_TILE_SIZE
+        base_pos = ( (self.selected_city_tile.x + 1) * CITY_TILE_SIZE - self.city_camera_offset.x + 5, self.selected_city_tile.y * CITY_TILE_SIZE - self.city_camera_offset.y + TOP_BAR_HEIGHT )
         return (base_pos[0], base_pos[1] + item_index * 45)
 
     def set_context_menu_for_tile(self, grid_pos: Position, tile, game_state: GameState, city_id: str, action_queue: list):
@@ -206,14 +226,13 @@ class UIManager:
 
     def screen_to_grid(self, screen_pos: tuple[int, int]) -> Optional[Position]:
         """Converts a screen coordinate to a city grid coordinate, if applicable."""
-        from client.renderer import CITY_TILE_SIZE, SCREEN_HEIGHT, CITY_VIEW_HEIGHT, WORLD_MAP_WIDTH
+        from client.renderer import CITY_TILE_SIZE, WORLD_MAP_WIDTH, SCREEN_HEIGHT
 
-        city_view_rect = pygame.Rect(0, SCREEN_HEIGHT - CITY_VIEW_HEIGHT, WORLD_MAP_WIDTH, CITY_VIEW_HEIGHT)
-        if not city_view_rect.collidepoint(screen_pos):
+        main_view_rect = pygame.Rect(0, TOP_BAR_HEIGHT, WORLD_MAP_WIDTH, SCREEN_HEIGHT - TOP_BAR_HEIGHT)
+        if not main_view_rect.collidepoint(screen_pos):
             return None
 
-        local_x = screen_pos[0] - city_view_rect.x
-        local_y = screen_pos[1] - city_view_rect.y
+        local_x, local_y = screen_pos[0] + self.city_camera_offset.x, screen_pos[1] - TOP_BAR_HEIGHT + self.city_camera_offset.y
 
         grid_x = local_x // CITY_TILE_SIZE
         grid_y = local_y // CITY_TILE_SIZE

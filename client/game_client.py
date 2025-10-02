@@ -1,7 +1,7 @@
 import pygame
 import sys
 from client.network_client import NetworkClient
-from client.renderer import Renderer
+from client.renderer import Renderer, SCREEN_WIDTH, SCREEN_HEIGHT
 from client.input_handler import InputHandler
 from client.ui_manager import UIManager
 from client.config import PLAYER_ID, CITY_ID
@@ -11,7 +11,7 @@ from nightfall_engine.engine.simulator import Simulator
 class GameClient:
     def __init__(self, host, port):
         pygame.init()
-        self.screen_size = (1280, 720)
+        self.screen_size = (SCREEN_WIDTH, SCREEN_HEIGHT)
         self.screen = pygame.display.set_mode(self.screen_size)
         pygame.display.set_caption("Project Nightfall Client")
         self.clock = pygame.time.Clock()
@@ -33,6 +33,7 @@ class GameClient:
         # Components
         self.ui_manager = UIManager()
         self.input_handler = InputHandler(PLAYER_ID, CITY_ID, self.ui_manager)
+        self.ui_manager.viewed_city_id = CITY_ID # Set the initial city to view
         self.renderer = Renderer(self.screen)
         
         self.is_running = False

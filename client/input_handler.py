@@ -1,5 +1,6 @@
 from typing import Optional
 import pygame
+from client.enums import ActiveView
 from client.ui_manager import UIManager
 from nightfall_engine.state.game_state import GameState
 from nightfall_engine.common.datatypes import Position
@@ -24,6 +25,9 @@ class InputHandler:
         self.player_id = player_id
         self.city_id = city_id
         self.ui_manager = ui_manager
+        # For double-click detection
+        self.last_click_time = 0
+        self.last_click_pos = None
 
     def handle_input(self, events: list, predicted_state: GameState, action_queue: list) -> Optional[dict]:
         """
@@ -37,10 +41,25 @@ class InputHandler:
         Returns:
             A dictionary representing a client action, or None if no action was taken.
         """
+        # Make the current predicted state available for all input handler methods via the UI manager
+        self.ui_manager.game_state_for_input = predicted_state
+
         for event in events:
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1: # Left click
-                return self._handle_mouse_click(event.pos, predicted_state, action_queue)
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1: # Left click
+                    return self._handle_mouse_down(event.pos, predicted_state, action_queue)
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 1: # Left click
+                    return self._handle_mouse_up(event.pos, predicted_state, action_queue)
+            elif event.type == pygame.MOUSEMOTION:
+                self._handle_mouse_motion(event.pos, event.buttons)
         return None
+
+    def _is_in_main_view(self, mouse_pos):
+        """Checks if the mouse is in the main game view area (not the side panel)."""
+        from client.ui_manager import WORLD_MAP_WIDTH
+        from client.renderer import SCREEN_HEIGHT
+        return mouse_pos[0] < WORLD_MAP_WIDTH and mouse_pos[1] < SCREEN_HEIGHT
 
     def handle_lobby_input(self, events: list, ui_manager: UIManager) -> Optional[dict]:
         """
@@ -57,31 +76,135 @@ class InputHandler:
                             return {"type": "join_session", "session_id": name}
         return None
 
+    def _handle_mouse_down(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list):
+        """Handles the moment the left mouse button is pressed."""
+        # If the click is in the main view area, prepare for a potential drag.
+        # We don't set is_dragging to True yet, that happens on mouse motion.
+        if self._is_in_main_view(mouse_pos):
+            self.ui_manager.drag_start_pos = mouse_pos
+            if self.ui_manager.active_view == ActiveView.WORLD_MAP:
+                self.ui_manager.drag_start_camera_offset = self.ui_manager.camera_offset
+            elif self.ui_manager.active_view == ActiveView.CITY_VIEW:
+                self.ui_manager.drag_start_camera_offset = self.ui_manager.city_camera_offset
+
+    def _handle_mouse_up(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
+        """Handles the moment the left mouse button is released."""
+        was_dragging = self.ui_manager.is_dragging
+        self.ui_manager.is_dragging = False
+        self.ui_manager.drag_start_pos = None # Reset drag start info
+        self.ui_manager.drag_start_camera_offset = None
+
+        # If we were dragging, the action is over. If not, it was a click.
+        if not was_dragging:
+            return self._handle_mouse_click(mouse_pos, state, action_queue)
+        return None
+
+    def _handle_mouse_motion(self, mouse_pos: tuple[int, int], buttons: tuple):
+        """Handles mouse movement, specifically for dragging the map."""
+        # A drag only starts if the mouse moves while the button is down,
+        # and a drag start position has been recorded.
+        if self.ui_manager.drag_start_pos and buttons[0]:
+            from client.renderer import WORLD_TILE_SIZE, CITY_TILE_SIZE, WORLD_MAP_WIDTH, SCREEN_HEIGHT
+            from client.ui_manager import TOP_BAR_HEIGHT
+
+            dx = mouse_pos[0] - self.ui_manager.drag_start_pos[0]
+            dy = mouse_pos[1] - self.ui_manager.drag_start_pos[1]
+            
+            self.ui_manager.is_dragging = True # A drag has officially started
+            start_offset = self.ui_manager.drag_start_camera_offset
+
+            new_x = start_offset.x - dx
+            new_y = start_offset.y - dy
+
+            if self.ui_manager.active_view == ActiveView.WORLD_MAP:
+                game_map = self.ui_manager.game_state_for_input.game_map
+                max_x = game_map.width * WORLD_TILE_SIZE - WORLD_MAP_WIDTH
+                max_y = game_map.height * WORLD_TILE_SIZE - (SCREEN_HEIGHT - TOP_BAR_HEIGHT)
+                clamped_x = max(0, min(new_x, max_x))
+                clamped_y = max(0, min(new_y, max_y))
+                self.ui_manager.camera_offset = Position(clamped_x, clamped_y)
+            elif self.ui_manager.active_view == ActiveView.CITY_VIEW:
+                city_id = self.ui_manager.viewed_city_id
+                city = self.ui_manager.game_state_for_input.cities.get(city_id)
+                if city:
+                    city_map = city.city_map
+                    max_x = city_map.width * CITY_TILE_SIZE - WORLD_MAP_WIDTH
+                    max_y = city_map.height * CITY_TILE_SIZE - (SCREEN_HEIGHT - TOP_BAR_HEIGHT)
+                    clamped_x = max(0, min(new_x, max_x))
+                    clamped_y = max(0, min(new_y, max_y))
+                    self.ui_manager.city_camera_offset = Position(clamped_x, clamped_y)
 
     def _handle_mouse_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
-        """Handles a single left mouse click at a given position."""
-        # 1. Prioritize UI elements: Context menu has top priority.
-        if self.ui_manager.context_menu and self.ui_manager.context_menu['rect'].collidepoint(mouse_pos):
-            return self._handle_context_menu_click(mouse_pos, state, action_queue)
-
-        # 2. Check main UI buttons
+        """Handles a single, discrete mouse click (not a drag)."""
+        # 1. Check global buttons first (End Day, Exit)
         for name, rect in self.ui_manager.buttons.items():
             if rect.collidepoint(mouse_pos):
                 if name == "end_day":
                     return {"type": "end_day"}
                 elif name == "exit_session":
                     return {"type": "exit_session"}
-        
-        # 3. Check action queue 'X' buttons
-        for i, rect in enumerate(self.ui_manager.queue_item_rects):
-             if rect.collidepoint(mouse_pos):
-                return {"type": "remove_action", "index": i}
 
-        # 4. If no UI was clicked, check the city grid
-        city = state.cities[self.city_id]
+        # 2. Check top bar view-switching buttons
+        for name, rect in self.ui_manager.top_bar_buttons.items():
+            if rect.collidepoint(mouse_pos):
+                if name == "view_world":
+                    self.ui_manager.active_view = ActiveView.WORLD_MAP
+                    self.ui_manager.clear_context_menu()
+                elif name == "view_city" and self.ui_manager.viewed_city_id:
+                    self.ui_manager.active_view = ActiveView.CITY_VIEW
+                return None # View changed, no server action needed.
+
+        # 3. Handle view-specific clicks
+        if self.ui_manager.active_view == ActiveView.WORLD_MAP:
+            return self._handle_world_map_click(mouse_pos, state)
+        elif self.ui_manager.active_view == ActiveView.CITY_VIEW:
+            return self._handle_city_view_click(mouse_pos, state, action_queue)
+        return None
+
+    def _handle_world_map_click(self, mouse_pos: tuple[int, int], state: GameState) -> Optional[dict]:
+        """Handles clicks when in the World Map view."""
+        from client.renderer import WORLD_TILE_SIZE
+        from client.ui_manager import TOP_BAR_HEIGHT
+        
+        world_x = mouse_pos[0] + self.ui_manager.camera_offset.x
+        world_y = mouse_pos[1] - TOP_BAR_HEIGHT + self.ui_manager.camera_offset.y
+        grid_x, grid_y = world_x // WORLD_TILE_SIZE, world_y // WORLD_TILE_SIZE
+        clicked_pos = Position(grid_x, grid_y)
+
+        # Check if a city was clicked
+        clicked_city = None
+        for city in state.cities.values():
+            if city.position == clicked_pos:
+                clicked_city = city
+                break
+        
+        if clicked_city:
+            current_time = pygame.time.get_ticks()
+            # Check for double-click
+            if clicked_pos == self.last_click_pos and current_time - self.last_click_time < 500:
+                print(f"[CLIENT] Double-clicked on city: {clicked_city.name}. Switching to city view.")
+                self.ui_manager.active_view = ActiveView.CITY_VIEW
+                self.last_click_pos = None # Reset double-click state
+            else: # Single click
+                print(f"[CLIENT] Selected city: {clicked_city.name}.")
+                self.ui_manager.viewed_city_id = clicked_city.id
+            self.last_click_time = current_time
+            self.last_click_pos = clicked_pos
+        return None
+
+    def _handle_city_view_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
+        """Handles clicks when in the City View."""
+        # Check for clicks on various UI elements within the city view
+        if self.ui_manager.context_menu and self.ui_manager.context_menu['rect'].collidepoint(mouse_pos):
+            return self._handle_context_menu_click(mouse_pos, state, action_queue)
+
+        for i, rect in enumerate(self.ui_manager.queue_item_rects):
+             if rect.collidepoint(mouse_pos): return {"type": "remove_action", "index": i}
+
         grid_pos = self.ui_manager.screen_to_grid(mouse_pos)
-        if grid_pos and 0 <= grid_pos.x < city.city_map.width and 0 <= grid_pos.y < city.city_map.height:
-            self._handle_city_tile_click(grid_pos, state, self.city_id, action_queue)
+        if grid_pos:
+            # Use the currently viewed city ID
+            self._handle_city_tile_click(grid_pos, state, self.ui_manager.viewed_city_id, action_queue)
 
         return None
 
