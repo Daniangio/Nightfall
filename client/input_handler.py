@@ -1,3 +1,4 @@
+from typing import Optional
 import pygame
 from client.ui_manager import UIManager
 from nightfall_engine.state.game_state import GameState
@@ -24,7 +25,7 @@ class InputHandler:
         self.city_id = city_id
         self.ui_manager = ui_manager
 
-    def handle_input(self, events: list, predicted_state: GameState, action_queue: list) -> dict | None:
+    def handle_input(self, events: list, predicted_state: GameState, action_queue: list) -> Optional[dict]:
         """
         Processes a list of Pygame events for a single frame.
 
@@ -41,7 +42,7 @@ class InputHandler:
                 return self._handle_mouse_click(event.pos, predicted_state, action_queue)
         return None
 
-    def handle_lobby_input(self, events: list, ui_manager: UIManager) -> dict | None:
+    def handle_lobby_input(self, events: list, ui_manager: UIManager) -> Optional[dict]:
         """
         Processes a list of Pygame events for the lobby screen.
         """
@@ -57,7 +58,7 @@ class InputHandler:
         return None
 
 
-    def _handle_mouse_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> dict | None:
+    def _handle_mouse_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
         """Handles a single left mouse click at a given position."""
         # 1. Prioritize UI elements: Context menu has top priority.
         if self.ui_manager.context_menu and self.ui_manager.context_menu['rect'].collidepoint(mouse_pos):
@@ -80,23 +81,29 @@ class InputHandler:
         city = state.cities[self.city_id]
         grid_pos = self.ui_manager.screen_to_grid(mouse_pos)
         if grid_pos and 0 <= grid_pos.x < city.city_map.width and 0 <= grid_pos.y < city.city_map.height:
-            self._handle_city_tile_click(grid_pos, state)
+            self._handle_city_tile_click(grid_pos, state, self.city_id, action_queue)
 
         return None
 
-    def _handle_city_tile_click(self, grid_pos: Position, state: GameState):
+    def _handle_city_tile_click(self, grid_pos: Position, state: GameState, city_id: str, action_queue: list):
         """Sets the context menu based on a click on a city tile."""
-        city = state.cities[self.city_id]
+        city = state.cities[city_id]
         tile = city.city_map.get_tile(grid_pos.x, grid_pos.y)
         if tile:
-            self.ui_manager.set_context_menu_for_tile(grid_pos, tile)
+            self.ui_manager.set_context_menu_for_tile(grid_pos, tile, state, city_id, action_queue)
 
-    def _handle_context_menu_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> dict | None:
+    def _handle_context_menu_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
         """Handles a click within an active context menu."""
         selected_pos = self.ui_manager.context_menu['position']
         
         for option in self.ui_manager.context_menu['options']:
             if option['rect'].collidepoint(mouse_pos):
+                # If the action is disabled, do nothing but close the menu.
+                if not option['is_enabled']:
+                    print(f"[CLIENT] Action disabled: {option.get('disabled_reason', 'Not enough resources.')}")
+                    self.ui_manager.clear_context_menu()
+                    return None
+
                 action_type = option['action']
 
                 # --- Action Queue Validation ---

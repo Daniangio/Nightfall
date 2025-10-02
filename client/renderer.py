@@ -121,8 +121,10 @@ class Renderer:
             return
             
         for option in ui_manager.context_menu['options']:
-            pygame.draw.rect(self.screen, C_BLUE, option['rect'], border_radius=5)
-            self.draw_text(option['text'], (option['rect'].x + 10, option['rect'].y + 10), self.font_s)
+            color = C_BLUE if option['is_enabled'] else C_GRAY
+            text_color = C_WHITE if option['is_enabled'] else C_LIGHT_GRAY
+            pygame.draw.rect(self.screen, color, option['rect'], border_radius=5)
+            self.draw_text(option['text'], (option['rect'].x + 10, option['rect'].y + 10), self.font_s, text_color)
     
     def draw_status_screen(self, message):
         self.screen.fill(C_BLACK)

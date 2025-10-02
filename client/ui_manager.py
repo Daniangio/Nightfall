@@ -1,7 +1,9 @@
+from typing import Optional
 from nightfall_engine.common.datatypes import Position
 from nightfall_engine.common.enums import BuildingType, CityTerrainType
+from nightfall_engine.common.game_data import BUILDING_DATA, DEMOLISH_COST
 from nightfall_engine.actions.city_actions import BuildBuildingAction, UpgradeBuildingAction, DemolishAction
-from client.config import PLAYER_ID, CITY_ID
+from nightfall_engine.state.game_state import GameState
 import pygame
 
 # ... (layout constants) ...
@@ -10,9 +12,10 @@ UI_PANEL_WIDTH = 600
 
 class UIManager:
     def __init__(self):
-        self.selected_city_tile: Position | None = None
-        self.context_menu: dict | None = None
+        self.selected_city_tile: Optional[Position] = None
+        self.context_menu: Optional[dict] = None
         # UI State
+        self.font_s = pygame.font.Font(None, 24)
         self.orders_sent = False
         self.is_ready = False
         # Main UI buttons for click detection
@@ -39,27 +42,29 @@ class UIManager:
         base_pos = ( (self.selected_city_tile.x + 1) * CITY_TILE_SIZE + 5, SCREEN_HEIGHT - CITY_VIEW_HEIGHT + self.selected_city_tile.y * CITY_TILE_SIZE )
         return (base_pos[0], base_pos[1] + item_index * 45)
 
-    def get_context_menu_item_rect(self, item_index):
-        if not self.selected_city_tile: return None
-        pos = self.get_context_menu_pos(item_index)
-        return pygame.Rect(pos, (160, 40))
-
-    def set_context_menu_for_tile(self, grid_pos: Position, tile):
+    def set_context_menu_for_tile(self, grid_pos: Position, tile, game_state: GameState, city_id: str, action_queue: list):
         """Sets the state for the context menu based on the selected tile."""
         self.selected_city_tile = grid_pos
-        options_data = self._get_context_menu_options_data(tile)
+        options_data = self._get_context_menu_options_data(tile, game_state, city_id, action_queue, grid_pos)
 
         if not options_data:
             self.clear_context_menu()
             return
 
         menu_options = []
+        padding_x = 20  # 10px on each side
+        item_height = 40
+
         for i, data in enumerate(options_data):
+            text_width, _ = self.font_s.size(data['text'])
+            item_width = text_width + padding_x
             menu_options.append({
                 'text': data['text'],
-                'rect': self.get_context_menu_item_rect(i),
+                'rect': pygame.Rect(self.get_context_menu_pos(i), (item_width, item_height)),
                 'action': data['action'],
-                'building_type': data.get('building_type')
+                'building_type': data.get('building_type'),
+                'is_enabled': data.get('is_enabled', True),
+                'disabled_reason': data.get('disabled_reason')
             })
         
         # Calculate the full bounding rect for the menu
@@ -75,26 +80,99 @@ class UIManager:
         self.context_menu = None
         self.selected_city_tile = None
 
-    def _get_context_menu_options_data(self, tile):
+    def _format_cost(self, cost: Optional[Position]) -> str:
+        """Formats a Resources object into a string like '(F:10 W:20)'."""
+        if not cost: return ""
+        parts = []
+        if cost.food > 0: parts.append(f"F:{cost.food}")
+        if cost.wood > 0: parts.append(f"W:{cost.wood}")
+        if cost.iron > 0: parts.append(f"I:{cost.iron}")
+        return f" ({' '.join(parts)})" if parts else ""
+
+    def _get_context_menu_options_data(self, tile, game_state: GameState, city_id: str, action_queue: list, grid_pos: Position):
         """Generates a list of possible actions for a tile."""
         options = []
+        city = game_state.cities[city_id]
+        player_resources = city.resources
+
+        # Check if an action is already queued for this tile
+        is_tile_in_queue = any(hasattr(a, 'position') and a.position == grid_pos for a in action_queue)
+        if is_tile_in_queue:
+            # If an action is queued, all options are disabled. We can show a placeholder.
+            return [{
+                'text': "Action Queued",
+                'action': 'none',
+                'is_enabled': False,
+                'disabled_reason': "An action for this tile is already in the queue."
+            }]
+
+
         if tile.building:
             if tile.building.type != BuildingType.CITADEL:
-                options.append({'text': f"Upgrade (Lvl {tile.building.level + 1})", 'action': 'upgrade'})
-                options.append({'text': "Demolish", 'action': 'demolish'})
+                # Upgrade action
+                next_level = tile.building.level + 1
+                upgrade_data = BUILDING_DATA.get(tile.building.type, {}).get('upgrade', {}).get(next_level)
+
+                if upgrade_data:
+                    cost = upgrade_data.get('cost')
+                    can_upgrade = player_resources.can_afford(cost)
+                    upgrade_option = {
+                        'text': f"Upgrade (Lvl {next_level}){self._format_cost(cost)}",
+                        'action': 'upgrade',
+                        'is_enabled': can_upgrade
+                    }
+                    if not can_upgrade:
+                        upgrade_option['disabled_reason'] = "Not enough resources."
+                    options.append(upgrade_option)
+                else: # Max level reached
+                    options.append({
+                        'text': "Upgrade (Max Level)",
+                        'action': 'upgrade',
+                        'is_enabled': False,
+                        'disabled_reason': "This building has reached its maximum level."
+                    })
+
+                # Demolish action
+                can_demolish = player_resources.can_afford(DEMOLISH_COST)
+                demolish_option = {
+                    'text': f"Demolish{self._format_cost(DEMOLISH_COST)}", 
+                    'action': 'demolish', 
+                    'is_enabled': can_demolish}
+                if not can_demolish:
+                    demolish_option['disabled_reason'] = "Not enough resources."
+                options.append(demolish_option)
         else: # No building
             if tile.terrain == CityTerrainType.GRASS:
                 # Any production building can be built on grass
-                options.append({'text': "Build Farm", 'action': 'build', 'building_type': BuildingType.FARM})
-                options.append({'text': "Build Lumber Mill", 'action': 'build', 'building_type': BuildingType.LUMBER_MILL})
-                options.append({'text': "Build Iron Mine", 'action': 'build', 'building_type': BuildingType.IRON_MINE})
+                buildable = [BuildingType.FARM, BuildingType.LUMBER_MILL, BuildingType.IRON_MINE]
+                for b_type in buildable:
+                    build_cost = BUILDING_DATA.get(b_type, {}).get('build', {}).get('cost')
+                    can_build = build_cost and player_resources.can_afford(build_cost)
+                    building_name = b_type.name.replace('_', ' ').title()
+                    build_option = {
+                        'text': f"Build {building_name}{self._format_cost(build_cost)}",
+                        'action': 'build',
+                        'building_type': b_type,
+                        'is_enabled': can_build
+                    }
+                    if not can_build:
+                        build_option['disabled_reason'] = "Not enough resources."
+                    options.append(build_option)
+
             elif tile.terrain in [CityTerrainType.FOREST_PLOT, CityTerrainType.IRON_DEPOSIT]:
-                # These plots can be cleared
-                options.append({'text': "Demolish Plot", 'action': 'demolish'})
+                # Demolishing plots
+                can_demolish = player_resources.can_afford(DEMOLISH_COST)
+                demolish_option = {
+                    'text': f"Demolish Plot{self._format_cost(DEMOLISH_COST)}", 
+                    'action': 'demolish', 
+                    'is_enabled': can_demolish}
+                if not can_demolish:
+                    demolish_option['disabled_reason'] = "Not enough resources."
+                options.append(demolish_option)
 
         return options
 
-    def screen_to_grid(self, screen_pos: tuple[int, int]) -> Position | None:
+    def screen_to_grid(self, screen_pos: tuple[int, int]) -> Optional[Position]:
         """Converts a screen coordinate to a city grid coordinate, if applicable."""
         from client.renderer import CITY_TILE_SIZE, SCREEN_HEIGHT, CITY_VIEW_HEIGHT, WORLD_MAP_WIDTH
 

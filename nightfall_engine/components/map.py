@@ -1,3 +1,4 @@
+from typing import Optional
 from nightfall_engine.common.enums import TerrainType
 from nightfall_engine.common.datatypes import Position
 
@@ -32,7 +33,7 @@ class GameMap:
         self.height = height
         self.tiles = [[None for _ in range(width)] for _ in range(height)]
 
-    def get_tile(self, x: int, y: int) -> Tile | None:
+    def get_tile(self, x: int, y: int) -> Optional[Tile]:
         if 0 <= x < self.width and 0 <= y < self.height:
             return self.tiles[y][x]
         return None

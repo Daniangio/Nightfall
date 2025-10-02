@@ -2,6 +2,7 @@ import socketserver
 import threading
 import json
 import time
+from typing import Optional
 import uuid
 from nightfall_engine.state.game_state import GameState
 from nightfall_engine.engine.simulator import Simulator
@@ -117,7 +118,7 @@ class MasterServer:
             # Return a list of session IDs and their player counts
             return {sid: len(s.clients) for sid, s in self.sessions.items()}
 
-    def join_session(self, session_id, player_id, handler) -> GameSession | None:
+    def join_session(self, session_id, player_id, handler) -> Optional[GameSession]:
         with self.lock:
             return self.sessions.get(session_id)
     
