@@ -1,7 +1,7 @@
 from nightfall_engine.actions.action import Action
 from nightfall_engine.common.datatypes import Position
 from nightfall_engine.common.enums import BuildingType, CityTerrainType
-from nightfall_engine.common.game_data import BUILDING_DATA, DEMOLISH_COST
+from nightfall_engine.common.game_data import BUILDING_DATA, DEMOLISH_COST_BUILDING, DEMOLISH_COST_RESOURCE
 from nightfall_engine.components.city import Building
 
 class BuildBuildingAction(Action):
@@ -163,10 +163,10 @@ class DemolishAction(Action):
             print(f"[ACTION FAILED] Nothing to demolish at {self.position}.")
             return False
 
-        # Use the globally defined demolish cost
-        cost = DEMOLISH_COST
+        # Determine the correct cost based on what is being demolished
+        cost = DEMOLISH_COST_BUILDING if can_demolish_building else DEMOLISH_COST_RESOURCE
 
-        if city.resources.food < cost.food or city.resources.wood < cost.wood:
+        if not city.resources.can_afford(cost):
             print(f"[ACTION FAILED] Not enough resources to demolish.")
             return False
 

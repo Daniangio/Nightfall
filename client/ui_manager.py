@@ -1,7 +1,7 @@
 from typing import Optional
 from nightfall_engine.common.datatypes import Position
 from nightfall_engine.common.enums import BuildingType, CityTerrainType
-from nightfall_engine.common.game_data import BUILDING_DATA, DEMOLISH_COST
+from nightfall_engine.common.game_data import BUILDING_DATA, DEMOLISH_COST_BUILDING, DEMOLISH_COST_RESOURCE
 from nightfall_engine.actions.city_actions import BuildBuildingAction, UpgradeBuildingAction, DemolishAction
 from nightfall_engine.state.game_state import GameState
 import pygame
@@ -133,9 +133,9 @@ class UIManager:
                     })
 
                 # Demolish action
-                can_demolish = player_resources.can_afford(DEMOLISH_COST)
+                can_demolish = player_resources.can_afford(DEMOLISH_COST_BUILDING)
                 demolish_option = {
-                    'text': f"Demolish{self._format_cost(DEMOLISH_COST)}", 
+                    'text': f"Demolish{self._format_cost(DEMOLISH_COST_BUILDING)}", 
                     'action': 'demolish', 
                     'is_enabled': can_demolish}
                 if not can_demolish:
@@ -161,9 +161,9 @@ class UIManager:
 
             elif tile.terrain in [CityTerrainType.FOREST_PLOT, CityTerrainType.IRON_DEPOSIT]:
                 # Demolishing plots
-                can_demolish = player_resources.can_afford(DEMOLISH_COST)
+                can_demolish = player_resources.can_afford(DEMOLISH_COST_RESOURCE)
                 demolish_option = {
-                    'text': f"Demolish Plot{self._format_cost(DEMOLISH_COST)}", 
+                    'text': f"Demolish Plot{self._format_cost(DEMOLISH_COST_RESOURCE)}", 
                     'action': 'demolish', 
                     'is_enabled': can_demolish}
                 if not can_demolish:
