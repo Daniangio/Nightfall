@@ -1,7 +1,7 @@
 from nightfall_engine.actions.action import Action
 from nightfall_engine.common.datatypes import Position
-from nightfall_engine.common.enums import BuildingType, CityTerrainType
-from nightfall_engine.common.game_data import BUILDING_DATA, DEMOLISH_COST_BUILDING, DEMOLISH_COST_RESOURCE
+from nightfall_engine.common.enums import BuildingType, CityTerrainType, UnitType
+from nightfall_engine.common.game_data import BUILDING_DATA, UNIT_DATA, DEMOLISH_COST_BUILDING, DEMOLISH_COST_RESOURCE
 from nightfall_engine.components.city import Building
 
 class BuildBuildingAction(Action):
@@ -200,4 +200,65 @@ class DemolishAction(Action):
             tile.terrain = CityTerrainType.GRASS
             print(f"[ACTION SUCCESS] Cleared plot at {self.position}, turning it to grass.")
 
+        return True
+
+
+class RecruitUnitAction(Action):
+    def __init__(self, player_id: str, city_id: str, unit_type: UnitType, quantity: int):
+        super().__init__(player_id, city_id)
+        self.unit_type = unit_type
+        self.quantity = quantity
+
+    def __str__(self):
+        return f"Recruit {self.quantity} {self.unit_type.name.title()}"
+
+    def to_dict(self) -> dict:
+        return {
+            'player_id': self.player_id,
+            'city_id': self.city_id,
+            'action_type': self.__class__.__name__,
+            'unit_type': self.unit_type.name,
+            'quantity': self.quantity
+        }
+
+    @classmethod
+    def _from_dict_data(cls, data: dict) -> 'RecruitUnitAction':
+        return cls(
+            player_id=data['player_id'],
+            city_id=data['city_id'],
+            unit_type=UnitType[data['unit_type']],
+            quantity=data['quantity']
+        )
+
+    def execute(self, game_state: 'GameState') -> bool:
+        player = game_state.players.get(self.player_id)
+        city = player.get_city(self.city_id, game_state.cities) if player else None
+        
+        if not city:
+            print(f"[ACTION FAILED] City '{self.city_id}' not found for player '{self.player_id}'.")
+            return False
+
+        unit_data = UNIT_DATA.get(self.unit_type)
+        if not unit_data:
+            print(f"[ACTION FAILED] Unit type {self.unit_type} not found in game data.")
+            return False
+
+        total_cost = Resources(
+            food=unit_data['cost'].food * self.quantity,
+            wood=unit_data['cost'].wood * self.quantity,
+            iron=unit_data['cost'].iron * self.quantity
+        )
+        ap_cost = unit_data['action_point_cost']
+
+        if city.action_points < ap_cost:
+            print(f"[ACTION FAILED] Not enough Action Points to start recruitment (needs {ap_cost}).")
+            return False
+        if not city.resources.can_afford(total_cost):
+            print(f"[ACTION FAILED] Not enough resources to recruit {self.quantity} {self.unit_type.name.title()}.")
+            return False
+
+        city.action_points -= ap_cost
+        city.resources -= total_cost
+        city.recruitment_queue.append(self)
+        print(f"[ACTION SUCCESS] Queued recruitment of {self.quantity} {self.unit_type.name.title()}.")
         return True

@@ -1,6 +1,8 @@
 from __future__ import annotations
 from dataclasses import dataclass
 
+from nightfall_engine.common.enums import UnitType
+
 @dataclass(frozen=True)
 class Position:
     """Represents a 2D position on the game map. Frozen for immutability."""
@@ -42,3 +44,24 @@ class Resources:
             cost: A Resources object representing the cost to check against.
         """
         return self.food >= cost.food and self.wood >= cost.wood and self.iron >= cost.iron
+
+@dataclass
+class RecruitmentProgress:
+    """Tracks the progress of a single unit recruitment batch."""
+    unit_type: UnitType
+    quantity: int
+    progress: float = 0.0 # Accumulated recruitment points
+
+    def deep_copy(self) -> RecruitmentProgress:
+        return RecruitmentProgress(self.unit_type, self.quantity, self.progress)
+
+    def to_dict(self) -> dict:
+        return {
+            'unit_type': self.unit_type.name,
+            'quantity': self.quantity,
+            'progress': self.progress
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> RecruitmentProgress:
+        return cls(UnitType[data['unit_type']], data['quantity'], data.get('progress', 0.0))

@@ -1,6 +1,7 @@
 from nightfall_engine.state.game_state import GameState
 from nightfall_engine.common.datatypes import Resources
-from nightfall_engine.common.game_data import BUILDING_DATA
+from nightfall_engine.common.game_data import BUILDING_DATA, UNIT_DATA
+from nightfall_engine.common.enums import BuildingType
 
 class Simulator:
     """
@@ -65,9 +66,45 @@ class Simulator:
                     if city:
                         city.update_stats_from_citadel()
             player.action_queue.clear() # Clear queue after processing
+
+        # 3. Process recruitment queues
+        print("3. Processing recruitment...")
+        for city in game_state.cities.values():
+            if not city.recruitment_queue:
+                continue
+
+            # Calculate total city-wide recruitment speed
+            recruitment_speed_bonus = 0
+            for row in city.city_map.tiles:
+                for tile in row:
+                    if tile.building and tile.building.type == BuildingType.BARRACKS:
+                        bonus = BUILDING_DATA[BuildingType.BARRACKS]['recruitment_speed_bonus'].get(tile.building.level, 0)
+                        recruitment_speed_bonus += bonus
             
-        # 3. Generate resources for all cities
-        print("3. Generating resources...")
+            # This is the total recruitment "points" this city generates this turn
+            total_recruitment_points = 1.0 * (1 + recruitment_speed_bonus)
+            print(f"  - {city.name} has {total_recruitment_points:.2f} recruitment points this turn.")
+
+            # Process the first item in the queue
+            queue_item = city.recruitment_queue[0]
+            queue_item.progress += total_recruitment_points
+
+            unit_data = UNIT_DATA[queue_item.unit_type]
+            time_per_unit = unit_data['base_recruit_time']
+            
+            # Check how many units are completed
+            units_completed = int(queue_item.progress // time_per_unit)
+            if units_completed > 0:
+                city.garrison[queue_item.unit_type] = city.garrison.get(queue_item.unit_type, 0) + units_completed
+                queue_item.quantity -= units_completed
+                queue_item.progress -= units_completed * time_per_unit
+                print(f"  - {city.name} recruited {units_completed} {queue_item.unit_type.name.title()}.")
+
+            if queue_item.quantity <= 0:
+                city.recruitment_queue.pop(0)
+
+        # 4. Generate resources for all cities
+        print("4. Generating resources...")
         for city in game_state.cities.values():
             production = self.calculate_resource_production(game_state, city)
             city.resources += production
