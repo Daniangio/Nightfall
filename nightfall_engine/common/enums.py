@@ -12,9 +12,7 @@ class BuildingType(Enum):
     FARM = auto()
     LUMBER_MILL = auto()
     IRON_MINE = auto()
-    WAREHOUSE = auto()
     BARRACKS = auto()
-    WALL = auto()
 
 class TerrainType(Enum):
     """Enumeration for world map tile terrain types."""
@@ -29,3 +27,7 @@ class CityTerrainType(Enum):
     FOREST_PLOT = auto()
     IRON_DEPOSIT = auto()
     WATER = auto()
+
+class UnitType(Enum):
+    """Enumeration for unit types."""
+    SWORDSMAN = auto()

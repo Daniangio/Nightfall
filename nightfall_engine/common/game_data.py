@@ -1,4 +1,4 @@
-from nightfall_engine.common.enums import BuildingType, CityTerrainType
+from nightfall_engine.common.enums import BuildingType, CityTerrainType, UnitType
 from nightfall_engine.common.datatypes import Resources
 
 # Central repository for game balance numbers
@@ -117,6 +117,31 @@ BUILDING_DATA = {
         'adjacency_bonus': {
             CityTerrainType.IRON_DEPOSIT.name: 0.20, # +20% production for each adjacent Iron Deposit
         }
+    },
+    BuildingType.BARRACKS: {
+        'action_point_cost': 1,
+        'build': {
+            'cost': Resources(food=50, wood=100, iron=80),
+        },
+        'upgrade': {
+            2: {'cost': Resources(food=0, wood=150, iron=120)},
+            3: {'cost': Resources(food=0, wood=250, iron=200)},
+        },
+        # Additive bonus to recruitment speed. 0.1 = +10% speed.
+        'recruitment_speed_bonus': {
+            1: 0.10,
+            2: 0.15,
+            3: 0.20,
+        }
+    }
+}
+
+# Data for recruitable units
+UNIT_DATA = {
+    UnitType.SWORDSMAN: {
+        'cost': Resources(food=20, wood=5, iron=10),
+        'base_recruit_time': 1.0, # in turns (days) per unit
+        'action_point_cost': 1, # AP cost to start a batch of recruitment
     }
 }
 
