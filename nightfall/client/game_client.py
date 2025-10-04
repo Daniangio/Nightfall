@@ -1,12 +1,12 @@
 import pygame
 import sys
-from client.network_client import NetworkClient
-from client.renderer import Renderer, SCREEN_WIDTH, SCREEN_HEIGHT
-from client.input_handler import InputHandler
-from client.ui_manager import UIManager
-from client.config import PLAYER_ID, CITY_ID
-from nightfall_engine.state.game_state import GameState
-from nightfall_engine.engine.simulator import Simulator
+from nightfall.client.network_client import NetworkClient
+from nightfall.client.renderer import Renderer, SCREEN_WIDTH, SCREEN_HEIGHT
+from nightfall.client.input_handler import InputHandler
+from nightfall.client.ui_manager import UIManager
+from nightfall.client.config import PLAYER_ID, CITY_ID
+from nightfall.core.state.game_state import GameState
+from nightfall.core.engine.simulator import Simulator
 
 class GameClient:
     def __init__(self, host, port):
@@ -45,7 +45,7 @@ class GameClient:
         self.network_client.connect(self.host, self.port)
         self.is_running = True
 
-        while self.is_running:
+        while self.is_running and self.network_client.is_connected:
             events = pygame.event.get()
             for event in events:
                 if event.type == pygame.QUIT:

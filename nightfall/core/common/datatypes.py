@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 
-from nightfall_engine.common.enums import UnitType
+from nightfall.core.common.enums import UnitType
 
 @dataclass(frozen=True)
 class Position:

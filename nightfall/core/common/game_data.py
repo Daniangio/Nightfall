@@ -1,5 +1,5 @@
-from nightfall_engine.common.enums import BuildingType, CityTerrainType, UnitType
-from nightfall_engine.common.datatypes import Resources
+from nightfall.core.common.enums import BuildingType, CityTerrainType, UnitType
+from nightfall.core.common.datatypes import Resources
 
 # Central repository for game balance numbers
 BUILDING_DATA = {

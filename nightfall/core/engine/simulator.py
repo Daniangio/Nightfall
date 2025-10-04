@@ -1,7 +1,7 @@
-from nightfall_engine.state.game_state import GameState
-from nightfall_engine.common.datatypes import Resources
-from nightfall_engine.common.game_data import BUILDING_DATA, UNIT_DATA
-from nightfall_engine.common.enums import BuildingType
+from nightfall.core.state.game_state import GameState
+from nightfall.core.common.datatypes import Resources
+from nightfall.core.common.game_data import BUILDING_DATA, UNIT_DATA
+from nightfall.core.common.enums import BuildingType
 
 class Simulator:
     """

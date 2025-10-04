@@ -1,10 +1,10 @@
 from typing import Optional
-from nightfall_engine.common.datatypes import Position
-from client.enums import ActiveView
-from nightfall_engine.common.enums import BuildingType, CityTerrainType
-from nightfall_engine.common.game_data import BUILDING_DATA, DEMOLISH_COST_BUILDING, DEMOLISH_COST_RESOURCE
-from nightfall_engine.actions.city_actions import BuildBuildingAction, UpgradeBuildingAction, DemolishAction
-from nightfall_engine.state.game_state import GameState
+from nightfall.core.common.datatypes import Position
+from nightfall.client.enums import ActiveView
+from nightfall.core.common.enums import BuildingType, CityTerrainType
+from nightfall.core.common.game_data import BUILDING_DATA, DEMOLISH_COST_BUILDING, DEMOLISH_COST_RESOURCE
+from nightfall.core.actions.city_actions import BuildBuildingAction, UpgradeBuildingAction, DemolishAction
+from nightfall.core.state.game_state import GameState
 import pygame
 
 # ... (layout constants) ...
@@ -53,12 +53,12 @@ class UIManager:
         self.lobby_buttons = {} # "create" or session_id -> rect
 
     def get_city_tile_rect(self, x, y):
-        from client.renderer import CITY_TILE_SIZE
+        from nightfall.client.renderer import CITY_TILE_SIZE
         return pygame.Rect(x * CITY_TILE_SIZE - self.city_camera_offset.x, y * CITY_TILE_SIZE - self.city_camera_offset.y + TOP_BAR_HEIGHT, CITY_TILE_SIZE, CITY_TILE_SIZE)
 
     def get_context_menu_pos(self, item_index=0):
         if not self.selected_city_tile: return (0,0)
-        from client.renderer import CITY_TILE_SIZE
+        from nightfall.client.renderer import CITY_TILE_SIZE
         base_pos = ( (self.selected_city_tile.x + 1) * CITY_TILE_SIZE - self.city_camera_offset.x + 5, self.selected_city_tile.y * CITY_TILE_SIZE - self.city_camera_offset.y + TOP_BAR_HEIGHT )
         return (base_pos[0], base_pos[1] + item_index * 45)
 
@@ -226,7 +226,7 @@ class UIManager:
 
     def screen_to_grid(self, screen_pos: tuple[int, int]) -> Optional[Position]:
         """Converts a screen coordinate to a city grid coordinate, if applicable."""
-        from client.renderer import CITY_TILE_SIZE, WORLD_MAP_WIDTH, SCREEN_HEIGHT
+        from nightfall.client.renderer import CITY_TILE_SIZE, WORLD_MAP_WIDTH, SCREEN_HEIGHT
 
         main_view_rect = pygame.Rect(0, TOP_BAR_HEIGHT, WORLD_MAP_WIDTH, SCREEN_HEIGHT - TOP_BAR_HEIGHT)
         if not main_view_rect.collidepoint(screen_pos):

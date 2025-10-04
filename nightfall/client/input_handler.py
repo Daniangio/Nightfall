@@ -1,10 +1,10 @@
 from typing import Optional
 import pygame
-from client.enums import ActiveView
-from client.ui_manager import UIManager
-from nightfall_engine.state.game_state import GameState
-from nightfall_engine.common.datatypes import Position
-from nightfall_engine.actions.city_actions import (
+from nightfall.client.enums import ActiveView
+from nightfall.client.ui_manager import UIManager
+from nightfall.core.state.game_state import GameState
+from nightfall.core.common.datatypes import Position
+from nightfall.core.actions.city_actions import (
     BuildBuildingAction, UpgradeBuildingAction, DemolishAction
 )
 
@@ -57,8 +57,8 @@ class InputHandler:
 
     def _is_in_main_view(self, mouse_pos):
         """Checks if the mouse is in the main game view area (not the side panel)."""
-        from client.ui_manager import WORLD_MAP_WIDTH
-        from client.renderer import SCREEN_HEIGHT
+        from nightfall.client.ui_manager import WORLD_MAP_WIDTH
+        from nightfall.client.renderer import SCREEN_HEIGHT
         return mouse_pos[0] < WORLD_MAP_WIDTH and mouse_pos[1] < SCREEN_HEIGHT
 
     def handle_lobby_input(self, events: list, ui_manager: UIManager) -> Optional[dict]:
@@ -104,8 +104,8 @@ class InputHandler:
         # A drag only starts if the mouse moves while the button is down,
         # and a drag start position has been recorded.
         if self.ui_manager.drag_start_pos and buttons[0]:
-            from client.renderer import WORLD_TILE_SIZE, CITY_TILE_SIZE, WORLD_MAP_WIDTH, SCREEN_HEIGHT
-            from client.ui_manager import TOP_BAR_HEIGHT
+            from nightfall.client.renderer import WORLD_TILE_SIZE, CITY_TILE_SIZE, WORLD_MAP_WIDTH, SCREEN_HEIGHT
+            from nightfall.client.ui_manager import TOP_BAR_HEIGHT
 
             dx = mouse_pos[0] - self.ui_manager.drag_start_pos[0]
             dy = mouse_pos[1] - self.ui_manager.drag_start_pos[1]
@@ -163,8 +163,8 @@ class InputHandler:
 
     def _handle_world_map_click(self, mouse_pos: tuple[int, int], state: GameState) -> Optional[dict]:
         """Handles clicks when in the World Map view."""
-        from client.renderer import WORLD_TILE_SIZE
-        from client.ui_manager import TOP_BAR_HEIGHT
+        from nightfall.client.renderer import WORLD_TILE_SIZE
+        from nightfall.client.ui_manager import TOP_BAR_HEIGHT
         
         world_x = mouse_pos[0] + self.ui_manager.camera_offset.x
         world_y = mouse_pos[1] - TOP_BAR_HEIGHT + self.ui_manager.camera_offset.y

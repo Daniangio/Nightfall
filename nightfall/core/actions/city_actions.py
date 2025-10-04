@@ -1,8 +1,8 @@
-from nightfall_engine.actions.action import Action
-from nightfall_engine.common.datatypes import Position
-from nightfall_engine.common.enums import BuildingType, CityTerrainType, UnitType
-from nightfall_engine.common.game_data import BUILDING_DATA, UNIT_DATA, DEMOLISH_COST_BUILDING, DEMOLISH_COST_RESOURCE
-from nightfall_engine.components.city import Building
+from nightfall.core.actions.action import Action
+from nightfall.core.common.datatypes import Position
+from nightfall.core.common.enums import BuildingType, CityTerrainType, UnitType
+from nightfall.core.common.game_data import BUILDING_DATA, UNIT_DATA, DEMOLISH_COST_BUILDING, DEMOLISH_COST_RESOURCE
+from nightfall.core.components.city import Building
 
 class BuildBuildingAction(Action):
     def __init__(self, player_id: str, city_id: str, position: Position, building_type: BuildingType):

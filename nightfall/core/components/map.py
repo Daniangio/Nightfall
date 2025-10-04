@@ -1,6 +1,6 @@
 from typing import Optional
-from nightfall_engine.common.enums import TerrainType
-from nightfall_engine.common.datatypes import Position
+from nightfall.core.common.enums import TerrainType
+from nightfall.core.common.datatypes import Position
 
 class Tile:
     """Represents a single tile on the game map."""

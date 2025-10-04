@@ -1,10 +1,10 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional
-from nightfall_engine.actions.action import Action
-from nightfall_engine.common.datatypes import Position, Resources, RecruitmentProgress
-from nightfall_engine.common.enums import BuildingType, CityTerrainType, UnitType
-from nightfall_engine.common.game_data import BUILDING_DATA
+from nightfall.core.actions.action import Action
+from nightfall.core.common.datatypes import Position, Resources, RecruitmentProgress
+from nightfall.core.common.enums import BuildingType, CityTerrainType, UnitType
+from nightfall.core.common.game_data import BUILDING_DATA
 
 @dataclass
 class Building:

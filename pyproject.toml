@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nightfall"
+version = "0.1.0"
+description = "A multi-user turn-based strategy game server and client."
+requires-python = ">=3.8"
+
+[project.scripts]
+# This creates the 'server' command that runs the main() function in server/main.py
+server = "nightfall.server.main:main"
+# I'll add a placeholder for the client. You can update this when you have a client entry point.
+client = "nightfall.client.main:main"

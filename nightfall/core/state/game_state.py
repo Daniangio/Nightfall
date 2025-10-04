@@ -1,11 +1,11 @@
 import json
 import copy
 from typing import Dict, Type
-from nightfall_engine.components.map import GameMap
-from nightfall_engine.components.player import Player
-from nightfall_engine.components.city import City, CityMap
-from nightfall_engine.actions.action import Action
-from nightfall_engine.actions.city_actions import BuildBuildingAction, UpgradeBuildingAction, DemolishAction
+from nightfall.core.components.map import GameMap
+from nightfall.core.components.player import Player
+from nightfall.core.components.city import City, CityMap
+from nightfall.core.actions.action import Action
+from nightfall.core.actions.city_actions import BuildBuildingAction, UpgradeBuildingAction, DemolishAction
 
 class GameState:
     """
@@ -61,8 +61,7 @@ class GameState:
     @classmethod
     def load_from_file(cls, filepath: str) -> 'GameState':
         """
-        Loads a game state from a JSON file, but overwrites the city layout
-        for 'city1' with the one from 'data/city_layout.txt'.
+        Loads a game state from a JSON file.
         """
         with open(filepath, 'r') as f:
             data = json.load(f)
@@ -71,7 +70,7 @@ class GameState:
         print(f"Loaded game state from {filepath} at turn {game_state.turn}")
 
         # Overwrite the city layout from the text file
-        city_layout_path = 'data/city_layout.txt'
+        city_layout_path = 'nightfall/server/data/city_layout.txt'
         if 'city1' in game_state.cities:
             game_state.cities['city1'].city_map = CityMap.load_from_file(city_layout_path)
             print(f"Overwrote 'city1' map with layout from {city_layout_path}")

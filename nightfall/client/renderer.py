@@ -1,6 +1,6 @@
 import pygame
 
-from client.enums import ActiveView
+from nightfall.client.enums import ActiveView
 # Constants
 CITY_TILE_SIZE = 50
 WORLD_TILE_SIZE = 40

@@ -4,13 +4,14 @@ import json
 import time
 from typing import Optional
 import uuid
-from nightfall_engine.state.game_state import GameState
-from nightfall_engine.engine.simulator import Simulator
-from nightfall_engine.actions.action import Action
+from nightfall.core.state.game_state import GameState
+from nightfall.core.engine.simulator import Simulator
+from nightfall.core.actions.action import Action
+from nightfall.config import PROJECT_ROOT
 
 # --- Server Configuration ---
 HOST, PORT = "localhost", 9999
-INITIAL_STATE_FILE = "data/initial_state.json"
+INITIAL_STATE_FILE = PROJECT_ROOT / "nightfall/server/data/initial_state.json"
 
 class GameSession:
     """Manages the state and logic for a single game session."""
@@ -227,7 +228,7 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
 
-if __name__ == "__main__":
+def main():
     server = ThreadedTCPServer((HOST, PORT), ThreadedTCPRequestHandler)
     print(f"Master Server starting up on {HOST}:{PORT}")
     with server:
@@ -240,3 +241,6 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
             print("Shutting down server.")
             server.shutdown()
+
+if __name__ == "__main__":
+    main()

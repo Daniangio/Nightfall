@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional
-from nightfall_engine.components.city import City
-from nightfall_engine.actions.action import Action
+from nightfall.core.components.city import City
+from nightfall.core.actions.action import Action
 
 class Player:
     """Represents a player in the game."""
