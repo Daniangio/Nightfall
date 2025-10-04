@@ -7,10 +7,14 @@ from nightfall.core.actions.city_actions import BuildBuildingAction, UpgradeBuil
 from nightfall.core.state.game_state import GameState
 import pygame
 
-# ... (layout constants) ...
-WORLD_MAP_WIDTH = 600
-UI_PANEL_WIDTH = 600
+# --- Default Layout Constants ---
+# These are used for initialization and as reference points for resizing.
+DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT = 960, 640
 TOP_BAR_HEIGHT = 40
+DEFAULT_SIDE_PANEL_WIDTH = 450
+MIN_SIDE_PANEL_WIDTH = 300
+MAX_SIDE_PANEL_WIDTH_RATIO = 0.6 # 60% of screen width
+SPLITTER_WIDTH = 8
 
 class UIManager:
     def __init__(self):
@@ -32,25 +36,66 @@ class UIManager:
         self.drag_start_pos = None
         self.drag_start_camera_offset = None
 
-        # Main UI buttons for click detection
-        self.buttons = {
-            "end_day": pygame.Rect(WORLD_MAP_WIDTH + 20, 500, 200, 50),
-            "exit_session": pygame.Rect(WORLD_MAP_WIDTH + UI_PANEL_WIDTH - 160, 5, 150, 30)
-        }
-        
-        # Top navigation bar
-        self.top_bar_rect = pygame.Rect(0, 0, WORLD_MAP_WIDTH, TOP_BAR_HEIGHT)
-        self.top_bar_buttons = {
-            "view_world": pygame.Rect(10, 5, 120, 30),
-            "view_city": pygame.Rect(140, 5, 120, 30)
-        }
+        # --- UI Rects ---
+        # These will be recalculated on window resize
+        self.screen_width = DEFAULT_SCREEN_WIDTH
+        self.screen_height = DEFAULT_SCREEN_HEIGHT
+        self.main_view_rect = pygame.Rect(0, 0, 0, 0)
+        self.side_panel_rect = pygame.Rect(0, 0, 0, 0)
+        self.top_bar_rect = pygame.Rect(0, 0, 0, 0)
+        self.resource_panel_rect = pygame.Rect(0, 0, 0, 0)
+        self.queue_panel_rect = pygame.Rect(0, 0, 0, 0)
+        self.splitter_rect = pygame.Rect(0, 0, 0, 0)
+
+        # --- UI Buttons ---
+        # These are dictionaries of name -> rect, also recalculated on resize
+        self.buttons = {}
+        self.top_bar_buttons = {}
 
         # Action Queue UI State
         self.queue_item_rects = []
+        self.queue_item_remove_button_rects = []
         self.predicted_production = None
 
         # Lobby UI State
         self.lobby_buttons = {} # "create" or session_id -> rect
+
+        # --- Resizable Panel State ---
+        self.side_panel_width = DEFAULT_SIDE_PANEL_WIDTH
+        self.is_dragging_splitter = False
+
+        # Initial layout calculation
+        self.on_resize(self.screen_width, self.screen_height)
+
+    def on_resize(self, width: int, height: int):
+        """Recalculates all UI element positions and sizes based on the new window size."""
+        # Maintain the panel's width ratio during window resize
+        width_ratio = width / self.screen_width if self.screen_width > 0 else 1
+        self.side_panel_width = self.side_panel_width * width_ratio
+
+        self.screen_width = width
+        self.screen_height = height
+
+        # Clamp the panel width to its min/max
+        max_panel_width = self.screen_width * MAX_SIDE_PANEL_WIDTH_RATIO
+        self.side_panel_width = max(MIN_SIDE_PANEL_WIDTH, min(self.side_panel_width, max_panel_width))
+
+        main_view_width = self.screen_width - self.side_panel_width
+        self.main_view_rect = pygame.Rect(0, 0, main_view_width, self.screen_height)
+        self.side_panel_rect = pygame.Rect(main_view_width, 0, self.side_panel_width, self.screen_height)
+        self.top_bar_rect = pygame.Rect(0, 0, main_view_width, TOP_BAR_HEIGHT)
+        self.splitter_rect = pygame.Rect(main_view_width - (SPLITTER_WIDTH // 2), 0, SPLITTER_WIDTH, self.screen_height)
+
+        self.top_bar_buttons['view_world'] = pygame.Rect(10, 5, 120, 30)
+        self.top_bar_buttons['view_city'] = pygame.Rect(140, 5, 120, 30)
+        self.buttons['exit_session'] = pygame.Rect(self.side_panel_rect.right - 160, 5, 150, 30)
+        self.buttons['end_day'] = pygame.Rect(self.side_panel_rect.x + (self.side_panel_rect.width - 250) // 2, self.screen_height - 70, 250, 50)
+        self.resource_panel_rect = pygame.Rect(self.side_panel_rect.x + 10, 100, self.side_panel_rect.width - 20, 120)
+        self.queue_panel_rect = pygame.Rect(self.side_panel_rect.x + 10, self.resource_panel_rect.bottom + 10, self.side_panel_rect.width - 20, 300)
+
+    def update_side_panel_width(self, new_width: int):
+        self.side_panel_width = new_width
+        self.on_resize(self.screen_width, self.screen_height)
 
     def get_city_tile_rect(self, x, y):
         from nightfall.client.renderer import CITY_TILE_SIZE
@@ -226,10 +271,10 @@ class UIManager:
 
     def screen_to_grid(self, screen_pos: tuple[int, int]) -> Optional[Position]:
         """Converts a screen coordinate to a city grid coordinate, if applicable."""
-        from nightfall.client.renderer import CITY_TILE_SIZE, WORLD_MAP_WIDTH, SCREEN_HEIGHT
+        from nightfall.client.renderer import CITY_TILE_SIZE
 
-        main_view_rect = pygame.Rect(0, TOP_BAR_HEIGHT, WORLD_MAP_WIDTH, SCREEN_HEIGHT - TOP_BAR_HEIGHT)
-        if not main_view_rect.collidepoint(screen_pos):
+        # Check if click is within the main view area, below the top bar
+        if not self.main_view_rect.collidepoint(screen_pos) or screen_pos[1] < TOP_BAR_HEIGHT:
             return None
 
         local_x, local_y = screen_pos[0] + self.city_camera_offset.x, screen_pos[1] - TOP_BAR_HEIGHT + self.city_camera_offset.y
@@ -238,15 +283,23 @@ class UIManager:
         grid_y = local_y // CITY_TILE_SIZE
         return Position(grid_x, grid_y)
 
-    def get_queue_item_remove_rect(self, item_index):
-        queue_item_y = 230 + item_index * 30
-        return pygame.Rect(WORLD_MAP_WIDTH + UI_PANEL_WIDTH - 40, queue_item_y, 20, 25)
+    def get_queue_item_rect(self, item_index: int) -> pygame.Rect:
+        """Gets the rect for the entire queue item row."""
+        item_y = self.queue_panel_rect.y + 50 + item_index * 30
+        return pygame.Rect(self.queue_panel_rect.x + 10, item_y, self.queue_panel_rect.width - 20, 25)
+
+    def get_queue_item_remove_button_rect(self, item_index: int) -> pygame.Rect:
+        """Gets the rect for the 'X' remove button on a queue item."""
+        item_rect = self.get_queue_item_rect(item_index)
+        return pygame.Rect(item_rect.right - 25, item_rect.y, 20, 25)
 
     def update_action_queue_ui(self, action_queue: list):
         """Updates the list of rects for the action queue 'remove' buttons."""
         self.queue_item_rects.clear()
+        self.queue_item_remove_button_rects.clear()
         for i in range(len(action_queue)):
-            self.queue_item_rects.append(self.get_queue_item_remove_rect(i))
+            self.queue_item_rects.append(self.get_queue_item_rect(i))
+            self.queue_item_remove_button_rects.append(self.get_queue_item_remove_button_rect(i))
 
     def update_lobby_buttons(self, sessions: dict):
         """Create and position buttons for the lobby screen."""

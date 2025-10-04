@@ -44,11 +44,17 @@ class InputHandler:
         # Make the current predicted state available for all input handler methods via the UI manager
         self.ui_manager.game_state_for_input = predicted_state
 
+        # Handle splitter drag separately as it can override other inputs
+        self._handle_splitter_drag(events)
+
         for event in events:
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1: # Left click
                     return self._handle_mouse_down(event.pos, predicted_state, action_queue)
             elif event.type == pygame.MOUSEBUTTONUP:
+                # Always release splitter drag on mouse up
+                if self.ui_manager.is_dragging_splitter:
+                    self.ui_manager.is_dragging_splitter = False
                 if event.button == 1: # Left click
                     return self._handle_mouse_up(event.pos, predicted_state, action_queue)
             elif event.type == pygame.MOUSEMOTION:
@@ -57,9 +63,7 @@ class InputHandler:
 
     def _is_in_main_view(self, mouse_pos):
         """Checks if the mouse is in the main game view area (not the side panel)."""
-        from nightfall.client.ui_manager import WORLD_MAP_WIDTH
-        from nightfall.client.renderer import SCREEN_HEIGHT
-        return mouse_pos[0] < WORLD_MAP_WIDTH and mouse_pos[1] < SCREEN_HEIGHT
+        return self.ui_manager.main_view_rect.collidepoint(mouse_pos)
 
     def handle_lobby_input(self, events: list, ui_manager: UIManager) -> Optional[dict]:
         """
@@ -78,6 +82,11 @@ class InputHandler:
 
     def _handle_mouse_down(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list):
         """Handles the moment the left mouse button is pressed."""
+        # Check if the splitter was clicked
+        if self.ui_manager.splitter_rect.collidepoint(mouse_pos):
+            self.ui_manager.is_dragging_splitter = True
+            return None # Don't process other clicks if we're starting a splitter drag
+
         # If the click is in the main view area, prepare for a potential drag.
         # We don't set is_dragging to True yet, that happens on mouse motion.
         if self._is_in_main_view(mouse_pos):
@@ -89,6 +98,10 @@ class InputHandler:
 
     def _handle_mouse_up(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
         """Handles the moment the left mouse button is released."""
+        # If we were dragging the splitter, the action is over.
+        if self.ui_manager.is_dragging_splitter:
+            return None
+
         was_dragging = self.ui_manager.is_dragging
         self.ui_manager.is_dragging = False
         self.ui_manager.drag_start_pos = None # Reset drag start info
@@ -101,11 +114,14 @@ class InputHandler:
 
     def _handle_mouse_motion(self, mouse_pos: tuple[int, int], buttons: tuple):
         """Handles mouse movement, specifically for dragging the map."""
+        # If we are dragging the splitter, don't also drag the map
+        if self.ui_manager.is_dragging_splitter:
+            return
+
         # A drag only starts if the mouse moves while the button is down,
         # and a drag start position has been recorded.
         if self.ui_manager.drag_start_pos and buttons[0]:
-            from nightfall.client.renderer import WORLD_TILE_SIZE, CITY_TILE_SIZE, WORLD_MAP_WIDTH, SCREEN_HEIGHT
-            from nightfall.client.ui_manager import TOP_BAR_HEIGHT
+            from nightfall.client.renderer import WORLD_TILE_SIZE, CITY_TILE_SIZE
 
             dx = mouse_pos[0] - self.ui_manager.drag_start_pos[0]
             dy = mouse_pos[1] - self.ui_manager.drag_start_pos[1]
@@ -118,21 +134,32 @@ class InputHandler:
 
             if self.ui_manager.active_view == ActiveView.WORLD_MAP:
                 game_map = self.ui_manager.game_state_for_input.game_map
-                max_x = game_map.width * WORLD_TILE_SIZE - WORLD_MAP_WIDTH
-                max_y = game_map.height * WORLD_TILE_SIZE - (SCREEN_HEIGHT - TOP_BAR_HEIGHT)
+                max_x = game_map.width * WORLD_TILE_SIZE - self.ui_manager.main_view_rect.width
+                max_y = game_map.height * WORLD_TILE_SIZE - (self.ui_manager.main_view_rect.height - self.ui_manager.top_bar_rect.height)
                 clamped_x = max(0, min(new_x, max_x))
                 clamped_y = max(0, min(new_y, max_y))
                 self.ui_manager.camera_offset = Position(clamped_x, clamped_y)
             elif self.ui_manager.active_view == ActiveView.CITY_VIEW:
                 city_id = self.ui_manager.viewed_city_id
                 city = self.ui_manager.game_state_for_input.cities.get(city_id)
-                if city:
+                if city: # Clamp dragging to city map boundaries
                     city_map = city.city_map
-                    max_x = city_map.width * CITY_TILE_SIZE - WORLD_MAP_WIDTH
-                    max_y = city_map.height * CITY_TILE_SIZE - (SCREEN_HEIGHT - TOP_BAR_HEIGHT)
+                    max_x = city_map.width * CITY_TILE_SIZE - self.ui_manager.main_view_rect.width
+                    max_y = city_map.height * CITY_TILE_SIZE - (self.ui_manager.main_view_rect.height - self.ui_manager.top_bar_rect.height)
                     clamped_x = max(0, min(new_x, max_x))
                     clamped_y = max(0, min(new_y, max_y))
                     self.ui_manager.city_camera_offset = Position(clamped_x, clamped_y)
+    
+    def _handle_splitter_drag(self, events: list):
+        """Handles events related to dragging the UI splitter."""
+        for event in events:
+            if event.type == pygame.MOUSEMOTION and self.ui_manager.is_dragging_splitter:
+                new_panel_width = self.ui_manager.screen_width - event.pos[0]
+                self.ui_manager.update_side_panel_width(new_panel_width)
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                if self.ui_manager.is_dragging_splitter:
+                    self.ui_manager.is_dragging_splitter = False
+
 
     def _handle_mouse_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
         """Handles a single, discrete mouse click (not a drag)."""
@@ -164,10 +191,9 @@ class InputHandler:
     def _handle_world_map_click(self, mouse_pos: tuple[int, int], state: GameState) -> Optional[dict]:
         """Handles clicks when in the World Map view."""
         from nightfall.client.renderer import WORLD_TILE_SIZE
-        from nightfall.client.ui_manager import TOP_BAR_HEIGHT
         
         world_x = mouse_pos[0] + self.ui_manager.camera_offset.x
-        world_y = mouse_pos[1] - TOP_BAR_HEIGHT + self.ui_manager.camera_offset.y
+        world_y = mouse_pos[1] - self.ui_manager.top_bar_rect.height + self.ui_manager.camera_offset.y
         grid_x, grid_y = world_x // WORLD_TILE_SIZE, world_y // WORLD_TILE_SIZE
         clicked_pos = Position(grid_x, grid_y)
 
@@ -198,7 +224,7 @@ class InputHandler:
         if self.ui_manager.context_menu and self.ui_manager.context_menu['rect'].collidepoint(mouse_pos):
             return self._handle_context_menu_click(mouse_pos, state, action_queue)
 
-        for i, rect in enumerate(self.ui_manager.queue_item_rects):
+        for i, rect in enumerate(self.ui_manager.queue_item_remove_button_rects):
              if rect.collidepoint(mouse_pos): return {"type": "remove_action", "index": i}
 
         grid_pos = self.ui_manager.screen_to_grid(mouse_pos)

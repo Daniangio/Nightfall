@@ -3,11 +3,8 @@ import pygame
 from nightfall.client.enums import ActiveView
 # Constants
 CITY_TILE_SIZE = 50
-WORLD_TILE_SIZE = 40
-SCREEN_WIDTH, SCREEN_HEIGHT = 1280, 720
-CITY_VIEW_HEIGHT = 400
-WORLD_MAP_WIDTH = 600
-UI_PANEL_WIDTH = SCREEN_WIDTH - WORLD_MAP_WIDTH
+WORLD_TILE_SIZE = 40 # This can remain as it defines the world grid scale
+
 
 # Colors
 C_BLACK, C_WHITE, C_RED, C_GREEN = (0,0,0), (255,255,255), (200,0,0), (0,200,0)
@@ -41,6 +38,9 @@ class Renderer:
         # Draw UI Panel over the main view
         city_id = ui_manager.viewed_city_id or "city1" # Fallback for panel
         city_for_panel = game_state.cities.get(city_id)
+        # Draw the resizable splitter
+        self.draw_splitter(ui_manager)
+
         self.draw_ui_panel(game_state, city_for_panel, production, ui_manager, action_queue)
 
         # Draw top bar over everything else
@@ -49,6 +49,11 @@ class Renderer:
     def draw_text(self, text, pos, font, color=C_WHITE):
         surface = font.render(text, True, color)
         self.screen.blit(surface, pos)
+
+    def draw_splitter(self, ui_manager):
+        """Draws the draggable splitter between the main view and the side panel."""
+        color = C_YELLOW if ui_manager.is_dragging_splitter else C_LIGHT_GRAY
+        pygame.draw.rect(self.screen, color, ui_manager.splitter_rect)
 
     def draw_top_bar(self, ui_manager):
         """Draws the top navigation bar."""
@@ -77,8 +82,8 @@ class Renderer:
                 tile = game_map.get_tile(x, y)
                 if tile:
                     color = WORLD_TERRAIN_COLORS.get(tile.terrain.name, C_WHITE)
-                    screen_x = x * WORLD_TILE_SIZE - ui_manager.camera_offset.x
-                    screen_y = y * WORLD_TILE_SIZE - ui_manager.camera_offset.y + ui_manager.top_bar_rect.height
+                    screen_x = x * WORLD_TILE_SIZE - ui_manager.camera_offset.x + ui_manager.main_view_rect.x
+                    screen_y = y * WORLD_TILE_SIZE - ui_manager.camera_offset.y + ui_manager.main_view_rect.y
                     rect = pygame.Rect(screen_x, screen_y, WORLD_TILE_SIZE - 1, WORLD_TILE_SIZE - 1)
                     self.screen.fill(color, rect)
         
@@ -120,12 +125,12 @@ class Renderer:
         self.draw_context_menu(city, ui_manager)
 
     def draw_ui_panel(self, game_state, city, production, ui_manager, action_queue):
-        ui_panel_rect = pygame.Rect(SCREEN_WIDTH - UI_PANEL_WIDTH, 0, UI_PANEL_WIDTH, SCREEN_HEIGHT)
-        self.screen.fill(C_GRAY, ui_panel_rect)
+        side_panel_rect = ui_manager.side_panel_rect
+        self.screen.fill(C_GRAY, side_panel_rect) # The main tool canvas
 
         y = 20
         if not city: # Handle case where no city is selected
-            self.draw_text("No city selected.", (ui_panel_rect.x + 20, y), self.font_m)
+            self.draw_text("No city selected.", (side_panel_rect.x + 20, y), self.font_m)
             return
         
         # Draw global buttons that belong on the UI panel
@@ -135,32 +140,36 @@ class Renderer:
         text_rect = text_surf.get_rect(center=exit_rect.center)
         self.screen.blit(text_surf, text_rect)
 
-        self.draw_text(f"City: {city.name}", (ui_panel_rect.x + 20, y), self.font_m)
+        self.draw_text(f"City: {city.name}", (side_panel_rect.x + 20, y), self.font_m)
         y += 40
-        self.draw_text(f"Turn: {game_state.turn}", (ui_panel_rect.x + 20, y), self.font_m)
-        y += 80
+        self.draw_text(f"Turn: {game_state.turn}", (side_panel_rect.x + 20, y), self.font_m)
+        y += 40
         
         # --- Resources & City Stats ---
-        stats_x_offset = ui_panel_rect.x + 220
+        # This is the "resource canvas (top)"
+        resource_rect = ui_manager.resource_panel_rect
+        pygame.draw.rect(self.screen, C_DARK_GRAY, resource_rect, border_radius=8)
+        res_y = resource_rect.y + 15
+        stats_x_offset = resource_rect.x + 220
         res = city.resources
-        self.draw_text(f"Food: {res.food} (+{production.food if production else 0})", (ui_panel_rect.x + 20, y), self.font_s)
-        self.draw_text(f"Action Points: {city.action_points} / {city.max_action_points}", (stats_x_offset, y), self.font_s)
-        y += 25
-        self.draw_text(f"Wood: {res.wood} (+{production.wood})", (ui_panel_rect.x + 20, y), self.font_s)
-        self.draw_text(f"Buildings: {city.num_buildings} / {city.max_buildings}", (stats_x_offset, y), self.font_s)
-        y += 25
-        self.draw_text(f"Iron: {res.iron} (+{production.iron})", (ui_panel_rect.x + 20, y), self.font_s)
-        y += 40
+        self.draw_text(f"Food: {res.food} (+{production.food if production else 0})", (resource_rect.x + 20, res_y), self.font_s)
+        self.draw_text(f"Action Points: {city.action_points} / {city.max_action_points}", (stats_x_offset, res_y), self.font_s)
+        res_y += 25
+        self.draw_text(f"Wood: {res.wood} (+{production.wood})", (resource_rect.x + 20, res_y), self.font_s)
+        self.draw_text(f"Buildings: {city.num_buildings} / {city.max_buildings}", (stats_x_offset, res_y), self.font_s)
+        res_y += 25
+        self.draw_text(f"Iron: {res.iron} (+{production.iron})", (resource_rect.x + 20, res_y), self.font_s)
 
-        self.draw_text(f"Build Queue:", (ui_panel_rect.x + 20, y), self.font_m)
-        y += 40
+        # --- Build Queue Canvas (bottom) ---
+        queue_rect = ui_manager.queue_panel_rect
+        pygame.draw.rect(self.screen, C_DARK_GRAY, queue_rect, border_radius=8)
+        self.draw_text(f"Build Queue:", (queue_rect.x + 20, queue_rect.y + 15), self.font_m)
         for i, action in enumerate(action_queue):
-            queue_item_y = 230 + i * 30
-            item_rect = pygame.Rect(ui_panel_rect.x + 20, queue_item_y, UI_PANEL_WIDTH - 40, 25)
+            item_rect = ui_manager.get_queue_item_rect(i)
             pygame.draw.rect(self.screen, C_LIGHT_GRAY, item_rect, border_radius=5)
             self.draw_text(f"{i+1}. {str(action)}", (item_rect.x + 5, item_rect.y + 2), self.font_s, C_BLACK)
             
-            x_rect = ui_manager.get_queue_item_remove_rect(i)
+            x_rect = ui_manager.get_queue_item_remove_button_rect(i)
             self.draw_text("X", (x_rect.x + 5, x_rect.y + 2), self.font_s, C_RED)
 
         # Draw main action buttons

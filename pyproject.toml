@@ -11,5 +11,5 @@ requires-python = ">=3.8"
 [project.scripts]
 # This creates the 'server' command that runs the main() function in server/main.py
 server = "nightfall.server.main:main"
-# I'll add a placeholder for the client. You can update this when you have a client entry point.
+# This creates the 'client' command that runs the main() function in client/main.py
 client = "nightfall.client.main:main"

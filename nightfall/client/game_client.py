@@ -1,9 +1,9 @@
 import pygame
 import sys
 from nightfall.client.network_client import NetworkClient
-from nightfall.client.renderer import Renderer, SCREEN_WIDTH, SCREEN_HEIGHT
+from nightfall.client.renderer import Renderer
 from nightfall.client.input_handler import InputHandler
-from nightfall.client.ui_manager import UIManager
+from nightfall.client.ui_manager import DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT, UIManager
 from nightfall.client.config import PLAYER_ID, CITY_ID
 from nightfall.core.state.game_state import GameState
 from nightfall.core.engine.simulator import Simulator
@@ -11,8 +11,8 @@ from nightfall.core.engine.simulator import Simulator
 class GameClient:
     def __init__(self, host, port):
         pygame.init()
-        self.screen_size = (SCREEN_WIDTH, SCREEN_HEIGHT)
-        self.screen = pygame.display.set_mode(self.screen_size)
+        # Make the window resizable
+        self.screen = pygame.display.set_mode((DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT), pygame.RESIZABLE)
         pygame.display.set_caption("Project Nightfall Client")
         self.clock = pygame.time.Clock()
 
@@ -50,6 +50,10 @@ class GameClient:
             for event in events:
                 if event.type == pygame.QUIT:
                     self.is_running = False
+                elif event.type == pygame.VIDEORESIZE:
+                    # The window was resized, re-create the screen surface and update UI
+                    self.screen = pygame.display.set_mode((event.w, event.h), pygame.RESIZABLE)
+                    self.ui_manager.on_resize(event.w, event.h)
 
             self._handle_network_updates()
             
