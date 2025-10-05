@@ -36,9 +36,34 @@ class GameState:
     @classmethod
     def from_dict(cls, data: dict) -> 'GameState':
         """Deserializes a game state from a dictionary."""
-        game_map = GameMap.from_dict(data['game_map'])
+
+        if 'game_map' in data:
+            game_map = GameMap.from_dict(data['game_map'])
+        else:
+            world_map_path = 'nightfall/server/data/map.txt'
+            game_map = GameMap.load_from_file(world_map_path)
+
+        if 'cities' in data:
+            cities = {c_id: City.from_dict(c_data, cls.ACTION_CLASS_MAP) for c_id, c_data in data['cities'].items()}
+        else:
+            city_layout_path = 'nightfall/server/data/city_layout.txt'
+            city_data = {
+                'id': 'city1',
+                'name': 'City 1',
+                'owner_id': 'player1',
+                'position': {'x': 0, 'y': 0},
+                'city_map': CityMap.load_from_file(city_layout_path).to_dict(),
+                'resources': {'food': 1000, 'wood': 1000, 'iron': 1000},
+                'build_queue': [],
+                'recruitment_queue': [],
+                'action_points': 0,
+                'garrison': {},
+            }
+            cities = {
+                'city1': City.from_dict(city_data, cls.ACTION_CLASS_MAP)
+            }
+
         players = {p_id: Player.from_dict(p_data, cls.ACTION_CLASS_MAP) for p_id, p_data in data['players'].items()}
-        cities = {c_id: City.from_dict(c_data, cls.ACTION_CLASS_MAP) for c_id, c_data in data['cities'].items()}
         
         return cls(game_map, players, cities, data['turn'])
 
@@ -68,17 +93,6 @@ class GameState:
         
         game_state = cls.from_dict(data)
         print(f"Loaded game state from {filepath} at turn {game_state.turn}")
-
-        # Overwrite the world map from the text file
-        # This ensures the map defined in map.txt is always used for new games.
-        world_map_path = 'nightfall/server/data/map.txt'
-        game_state.game_map = GameMap.load_from_file(world_map_path)
-
-        # Overwrite the city layout from the text file
-        city_layout_path = 'nightfall/server/data/city_layout.txt'
-        if 'city1' in game_state.cities:
-            game_state.cities['city1'].city_map = CityMap.load_from_file(city_layout_path)
-            print(f"Overwrote 'city1' map with layout from {city_layout_path}")
 
         return game_state
 

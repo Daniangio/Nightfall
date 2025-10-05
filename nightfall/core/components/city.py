@@ -136,8 +136,6 @@ class City:
         """Called after the dataclass is initialized."""
         # Ensure stats are calculated and AP is full on creation.
         self.update_stats_from_citadel()
-        if self.action_points == 0: # Only fill AP if it's at the default, not from loading a save
-            self.action_points = self.max_action_points
 
     def update_stats_from_citadel(self):
         """Recalculates city-wide stats based on the Citadel's level."""
@@ -149,12 +147,14 @@ class City:
                     num_buildings += 1
                     if tile.building.type == BuildingType.CITADEL:
                         citadel = tile.building
-        
+        assert citadel
         self.num_buildings = num_buildings
-        if citadel:
-            citadel_stats = BUILDING_DATA[BuildingType.CITADEL]['provides'].get(citadel.level, {})
-            self.max_buildings = citadel_stats.get('max_buildings', 0)
-            self.max_action_points = citadel_stats.get('action_points', 0)
+
+        citadel_stats = BUILDING_DATA[BuildingType.CITADEL]['provides'].get(citadel.level, {})
+        self.max_buildings = citadel_stats.get('max_buildings', 0)
+        self.max_action_points = citadel_stats.get('action_points', 0)
+        self.action_points = self.max_action_points
+
 
     def deep_copy(self) -> City:
         new_city = City(self.id, self.name, self.owner_id, self.position, self.city_map.deep_copy())
@@ -183,7 +183,6 @@ class City:
 
     @classmethod
     def from_dict(cls, data: dict, action_class_map: dict) -> City:
-        # We need a map of action names to classes to deserialize the queue
         queue = []
         for action_data in data.get('build_queue', []):
             action_class = action_class_map.get(action_data['action_type'])
@@ -206,8 +205,5 @@ class City:
             recruitment_queue=recruitment_queue,
             garrison={UnitType[unit_name]: count for unit_name, count in data.get('garrison', {}).items()}
         )
-        
-        # After loading, stats need to be recalculated from the loaded map state
-        city.update_stats_from_citadel()
         
         return city

@@ -15,16 +15,15 @@ INITIAL_STATE_FILE = PROJECT_ROOT / "nightfall/server/data/initial_state.json"
 
 class GameSession:
     """Manages the state and logic for a single game session."""
-    def __init__(self, session_id: str):
+    def __init__(self, session_id: str, initial_state: GameState):
         self.session_id = session_id
-        self.state = GameState.load_from_file(INITIAL_STATE_FILE)
+        self.state = initial_state
         self.simulator = Simulator()
         self.lock = threading.Lock()
         
         # Player management for this session
         self.clients = {}  # player_id -> handler
-        self.player_orders = {}
-        self.player_ready_status = {}
+        self.player_ready_status = {pid: False for pid in self.state.players}
         print(f"GameSession '{session_id}' created.")
 
     def handle_new_player(self, player_id, handler):
@@ -32,8 +31,8 @@ class GameSession:
             # If player is rejoining, just update their handler. Otherwise, initialize them.
             self.clients[player_id] = handler
             if player_id not in self.player_ready_status:
+                # This case is for dynamically adding players to a running game, not currently used.
                 self.player_ready_status[player_id] = False
-                self.player_orders[player_id] = []
                 print(f"Player '{player_id}' joined session '{self.session_id}' for the first time.")
             else:
                 print(f"Player '{player_id}' reconnected to session '{self.session_id}'.")
@@ -46,10 +45,13 @@ class GameSession:
 
     def handle_set_orders(self, player_id, actions_data):
         with self.lock:
+            player = self.state.players.get(player_id)
+            if not player:
+                return {"status": "error", "message": f"Player '{player_id}' not in this session."}
             # When new orders are set, the player is no longer ready.
             action_class_map = GameState.ACTION_CLASS_MAP
-            self.player_orders[player_id] = [Action.from_dict(data, action_class_map) for data in actions_data]
-            self.player_ready_status[player_id] = False
+            player.action_queue = [Action.from_dict(data, action_class_map) for data in actions_data]
+            self.player_ready_status[player_id] = False # Un-ready the player
             print(f"Received orders from player '{player_id}' in session '{self.session_id}'.")
             return {"status": "success", "message": "Orders received."}
 
@@ -70,34 +72,24 @@ class GameSession:
 
         if all_ready:
             print(f"\n--- All players ready in session '{self.session_id}'! Simulating turn. ---")
-            for player_id, orders in self.player_orders.items():
-                if player_id in self.state.players:
-                    self.state.players[player_id].action_queue = orders
-
+            # The action queues are already on the player objects in the game state.
             self.simulator.simulate_full_turn(self.state)
             
             for pid in self.player_ready_status:
                 if pid in self.clients: # Only un-ready active players
                     self.player_ready_status[pid] = False
-            self.player_orders.clear()
             
             # In a real game, each session would have its own save file
             # self.state.save_to_file(f"data/{self.session_id}.json")
             
             print(f"--- Turn {self.state.turn} simulated. Broadcasting new state to session clients. ---\n")
             self.broadcast_state()
-
     def broadcast_state(self):
-        state_json_str = self.state.to_json_string()
-        payload = json.loads(state_json_str)
-        # Ensure player action queues are included in the broadcast
-        for pid, orders in self.player_orders.items():
-            if pid in payload['players']:
-                payload['players'][pid]['action_queue'] = [o.to_dict() for o in orders]
-        message = json.dumps({"type": "state_update", "payload": payload})
+        # The state object is the single source of truth. Just serialize and send.
+        payload = self.state.to_dict()
         for handler in list(self.clients.values()):
             try:
-                handler.send_message(message)
+                handler.send_response("state_update", payload)
             except OSError as e:
                 print(f"Error broadcasting to a client: {e}")
 
@@ -107,10 +99,15 @@ class MasterServer:
         self.sessions = {} # session_id -> GameSession
         self.lock = threading.Lock()
 
-    def create_session(self, player_id, handler) -> GameSession:
+    def create_session(self) -> GameSession:
+        """Factory method to create a new, properly initialized game session."""
         with self.lock:
             session_id = str(uuid.uuid4())[:8] # Create a unique session ID
-            session = GameSession(session_id)
+            
+            # Create a fresh GameState for the new session
+            initial_state = GameState.load_from_file(INITIAL_STATE_FILE)
+            
+            session = GameSession(session_id, initial_state)
             self.sessions[session_id] = session
             return session
     
@@ -119,7 +116,7 @@ class MasterServer:
             # Return a list of session IDs and their player counts
             return {sid: len(s.clients) for sid, s in self.sessions.items()}
 
-    def join_session(self, session_id, player_id, handler) -> Optional[GameSession]:
+    def get_session(self, session_id) -> Optional[GameSession]:
         with self.lock:
             return self.sessions.get(session_id)
     
@@ -156,48 +153,32 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
         if not self.session: # Initial commands before being in a session
             if command == "list_sessions":
                 sessions_info = master_server.list_sessions()
-                response = {"type": "session_list", "payload": sessions_info}
-                self.send_message(json.dumps(response))
+                self.send_response("session_list", sessions_info)
                 return
 
             elif command == "create_session":
                 self.player_id = data.get("player_id", "player1")
-                self.session = master_server.create_session(self.player_id, self)
+                self.session = master_server.create_session()
                 self.session.handle_new_player(self.player_id, self)
                 
-                # The client expects an 'initial_state' message type
-                payload = self.session.state.to_dict()
-                # On creation, the action queue is empty
-                for p_data in payload['players'].values():
-                    p_data['action_queue'] = []
-
-                response = {"type": "initial_state", "payload": payload}
-                self.send_message(json.dumps(response))
+                self.send_response("state_update", self.session.state.to_dict())
                 # Also send an ack for session creation
-                ack_msg = {"type": "ack", "payload": {"message": f"Created and joined session {self.session.session_id}"}}
-                self.send_message(json.dumps(ack_msg))
+                self.send_response("ack", {"message": f"Created and joined session {self.session.session_id}"})
 
             elif command == "join_session":
                 payload = data.get("payload", {})
                 session_id = payload.get("session_id")
                 self.player_id = payload.get("player_id", f"player{int(time.time()) % 1000}")
-                session = master_server.join_session(session_id, self.player_id, self)
+                session = master_server.get_session(session_id)
                 if session:
                     self.session = session
                     self.session.handle_new_player(self.player_id, self)
-                    # On join/rejoin, send the state including any persisted orders for that player
-                    payload = self.session.state.to_dict()
-                    for pid, orders in self.session.player_orders.items():
-                        if pid in payload['players']:
-                            payload['players'][pid]['action_queue'] = [o.to_dict() for o in orders]
-
-                    response = {"type": "initial_state", "payload": payload}
-                    self.send_message(json.dumps(response))
-                    ack_msg = {"type": "ack", "payload": {"message": f"Joined session {session_id}"}}
-                    self.send_message(json.dumps(ack_msg))
+                    # On join/rejoin, send the current state, which includes all players' action queues.
+                    self.send_response("state_update", self.session.state.to_dict())
+                    self.send_response("ack", {"message": f"Joined session {session_id}"})
                 else:
-                    err_msg = {"type": "error", "payload": {"message": f"Session '{session_id}' not found."}}
-                    self.send_message(json.dumps(err_msg))
+                    self.send_response("error", {"message": f"Session '{session_id}' not found."})
+            return
         else: # In-game commands, delegate to the session
             player_id = data.get("player_id")
             payload = data.get("payload")
@@ -210,19 +191,19 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
             elif command == "leave_session":
                 self.session.remove_player(player_id)
                 self.session = None # Detach handler from session
-                response_data = {"status": "success", "message": "Exited to lobby."}
                 # No need to send ack, client handles state change locally
                 return
             elif command == "join_session": # Player is already in a session, cannot join another
                 response_data = {"status": "error", "message": "Already in a session."}
             else:
-                response_data = {"status": "error", "message": "Unknown command"}
+                response_data = {"status": "error", "message": f"Unknown command '{command}'"}
             
             # Format the response to what the client expects (ack/error)
             response_type = "ack" if response_data.get("status") == "success" else "error"
-            self.send_message(json.dumps({"type": response_type, "payload": {"message": response_data.get("message")}}))
+            self.send_response(response_type, {"message": response_data.get("message")})
 
-    def send_message(self, message: str):
+    def send_response(self, msg_type: str, payload: dict):
+        message = json.dumps({"type": msg_type, "payload": payload})
         self.request.sendall(message.encode('utf-8') + b'\n')
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):

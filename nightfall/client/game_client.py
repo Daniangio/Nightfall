@@ -80,10 +80,6 @@ class GameClient:
             payload = message.get("payload")
 
             if msg_type == "initial_state" or msg_type == "state_update":
-                # The server is now the source of truth for the action queue on state updates
-                player_data = payload.get('players', {}).get(PLAYER_ID, {})
-                action_data = player_data.get('action_queue', [])
-                
                 self.server_state = GameState.from_dict(payload)
                 self.action_queue = self.server_state.players[PLAYER_ID].action_queue
                 self.client_state = "IN_GAME"

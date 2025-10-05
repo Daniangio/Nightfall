@@ -1,10 +1,5 @@
 {
     "turn": 1,
-    "game_map": {
-        "width":  0,
-        "height": 0,
-        "tiles":  []
-    },
     "players": {
         "player1": {
             "id": "player1",
@@ -12,28 +7,6 @@
             "city_ids": [
                 "city1"
             ]
-        }
-    },
-    "cities": {
-        "city1": {
-            "id": "city1",
-            "name": "Firsthold",
-            "owner_id": "player1",
-            "position": {
-                "x": 3,
-                "y": 3
-            },
-            "city_map": {
-                "width": 0,
-                "height": 0,
-                "tiles": []
-            },
-            "resources": {
-                "food": 10000,
-                "wood": 10000,
-                "iron": 10000
-            },
-            "build_queue": []
         }
     }
 }

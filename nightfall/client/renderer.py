@@ -84,11 +84,12 @@ class Renderer:
                 tile = game_map.get_tile(x, y)
                 # EmptyTile has terrain=None, so this check implicitly skips it.
                 if tile and tile.terrain:
-                    color = WORLD_TERRAIN_COLORS.get(tile.terrain.name, C_WHITE)
+                    color = WORLD_TERRAIN_COLORS.get(tile.terrain.name, None)
                     screen_x = x * WORLD_TILE_SIZE - ui_manager.camera_offset.x + ui_manager.main_view_rect.x
                     screen_y = y * WORLD_TILE_SIZE - ui_manager.camera_offset.y + ui_manager.main_view_rect.y
                     rect = pygame.Rect(screen_x, screen_y, WORLD_TILE_SIZE - 1, WORLD_TILE_SIZE - 1)
-                    self.screen.fill(color, rect)
+                    if color: # Don't draw empty tiles
+                        self.screen.fill(color, rect)
         
         for city in cities.values():
             screen_x = city.position.x * WORLD_TILE_SIZE - ui_manager.camera_offset.x
@@ -109,8 +110,10 @@ class Renderer:
                 tile = city_map.get_tile(x,y)
                 # EmptyTile has terrain=None, so this check implicitly skips it.
                 if tile and tile.terrain:
-                    color = CITY_TERRAIN_COLORS.get(tile.terrain.name, C_WHITE)
+                    color = CITY_TERRAIN_COLORS.get(tile.terrain.name, None)
                     rect = ui_manager.get_city_tile_rect(x, y)
+                    if color is None: # Don't draw empty tiles
+                        continue
                     self.screen.fill(color, rect)
                     pygame.draw.rect(self.screen, C_BLACK, rect, 1)
                     

@@ -10,7 +10,7 @@ import pygame
 
 # --- Default Layout Constants ---
 # These are used for initialization and as reference points for resizing.
-DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT = 960, 640
+DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT = 640, 480
 TOP_BAR_HEIGHT = 40
 DEFAULT_SIDE_PANEL_WIDTH = 450
 MIN_SIDE_PANEL_WIDTH = 300
