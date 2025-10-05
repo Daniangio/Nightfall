@@ -1,8 +1,13 @@
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 import pygame
 
 from nightfall.client.ui.components.base_component import BaseComponent
 from nightfall.client.ui.components.queue_components import BuildQueueComponent, UnitQueueComponent
+
+if TYPE_CHECKING:
+    # This block is only read by type checkers, not at runtime
+    from nightfall.client.ui_manager import UIManager
+    from nightfall.core.state.game_state import GameState
 
 # Colors - It's good practice for components to define or import their own colors
 C_GRAY = (50, 50, 50)
@@ -16,7 +21,7 @@ class ResourcePanelComponent(BaseComponent):
     def handle_event(self, event: pygame.event.Event, *args, **kwargs) -> Optional[dict]:
         return None # This panel is display-only
 
-    def draw(self, screen: pygame.Surface, ui_manager: 'UIManager', game_state: 'GameState', city, production):
+    def draw(self, screen: pygame.Surface, ui_manager: "UIManager", game_state: "GameState", city, production):
         resource_rect = ui_manager.resource_panel_rect
         pygame.draw.rect(screen, (30,30,30), resource_rect, border_radius=8)
         
@@ -41,7 +46,7 @@ class ResourcePanelComponent(BaseComponent):
 
 
 class SidePanelComponent(BaseComponent):
-    def __init__(self, ui_manager: 'UIManager'):
+    def __init__(self, ui_manager: "UIManager"):
         self.ui_manager = ui_manager
         self.font_m = ui_manager.font_m
         self.font_s = ui_manager.font_s
@@ -51,7 +56,7 @@ class SidePanelComponent(BaseComponent):
         self.build_queue_panel = BuildQueueComponent(ui_manager)
         self.unit_queue_panel = UnitQueueComponent(ui_manager)
 
-    def handle_event(self, event: pygame.event.Event, game_state: 'GameState', action_queue: list) -> Optional[dict]:
+    def handle_event(self, event: pygame.event.Event, game_state: "GameState", action_queue: list) -> Optional[dict]:
         # Delegate events to sub-components first
         action = self.build_queue_panel.handle_event(event, game_state, action_queue)
         if action: return action
@@ -98,7 +103,7 @@ class SidePanelComponent(BaseComponent):
         self.ui_manager.queue_split_ratio = max(0.05, min(0.95, new_ratio))
         self.ui_manager.update_queue_layouts(action_queue)
 
-    def draw(self, screen: pygame.Surface, game_state: 'GameState', city, production, action_queue):
+    def draw(self, screen: pygame.Surface, game_state: "GameState", city, production, action_queue):
         side_panel_rect = self.ui_manager.side_panel_rect
         screen.fill(C_GRAY, side_panel_rect)
 

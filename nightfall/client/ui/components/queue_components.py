@@ -1,19 +1,24 @@
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 import pygame
 
 from nightfall.client.ui.components.base_component import BaseComponent
+
+if TYPE_CHECKING:
+    # This block is only read by type checkers, not at runtime
+    from nightfall.client.ui_manager import UIManager
+    from nightfall.core.state.game_state import GameState
 
 # Colors
 C_BLACK, C_WHITE, C_RED = (0,0,0), (255,255,255), (200,0,0)
 C_BLUE, C_DARK_GRAY, C_LIGHT_GRAY = (65,105,225), (30,30,30), (150,150,150)
 
 class BuildQueueComponent(BaseComponent):
-    def __init__(self, ui_manager: 'UIManager'):
+    def __init__(self, ui_manager: "UIManager"):
         self.ui_manager = ui_manager
         self.font_s = ui_manager.font_s
         self.font_m = ui_manager.font_m
 
-    def handle_event(self, event: pygame.event.Event, game_state: 'GameState', action_queue: list) -> Optional[dict]:
+    def handle_event(self, event: pygame.event.Event, game_state: "GameState", action_queue: list) -> Optional[dict]:
         if event.type == pygame.MOUSEMOTION:
             self.ui_manager.hovered_remove_button_index = None
             for i, rect in enumerate(self.ui_manager.queue_item_remove_button_rects):
@@ -39,7 +44,7 @@ class BuildQueueComponent(BaseComponent):
 
         return None
 
-    def draw(self, screen: pygame.Surface, ui_manager: 'UIManager', action_queue: list):
+    def draw(self, screen: pygame.Surface, ui_manager: "UIManager", action_queue: list):
         build_queue_rect = ui_manager.build_queue_panel_rect
         pygame.draw.rect(screen, C_DARK_GRAY, build_queue_rect, border_radius=8)
         screen.blit(self.font_s.render(f"Building Queue ({len(action_queue)})", True, C_WHITE), (build_queue_rect.x + 20, build_queue_rect.y + 10))
@@ -81,7 +86,7 @@ class BuildQueueComponent(BaseComponent):
         screen.blit(text_surf, text_rect)
 
 class UnitQueueComponent(BaseComponent):
-    def __init__(self, ui_manager: 'UIManager'):
+    def __init__(self, ui_manager: "UIManager"):
         self.ui_manager = ui_manager
         self.font_s = ui_manager.font_s
 
@@ -89,7 +94,7 @@ class UnitQueueComponent(BaseComponent):
         # Placeholder for future interactions like reordering or canceling units
         return None
 
-    def draw(self, screen: pygame.Surface, ui_manager: 'UIManager', city):
+    def draw(self, screen: pygame.Surface, ui_manager: "UIManager", city):
         unit_queue_rect = ui_manager.unit_queue_panel_rect
         unit_queue = city.recruitment_queue if city else []
         pygame.draw.rect(screen, C_DARK_GRAY, unit_queue_rect, border_radius=8)
