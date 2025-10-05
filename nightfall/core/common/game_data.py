@@ -11,9 +11,9 @@ BUILDING_DATA = {
             3: Resources(food=10, wood=10, iron=5),
         },
         'provides': { # Stats provided by the Citadel at each level
-            1: {'max_buildings': 10, 'action_points': 3},
-            2: {'max_buildings': 15, 'action_points': 4},
-            3: {'max_buildings': 20, 'action_points': 5},
+            1: {'max_buildings': 100, 'action_points': 30},
+            2: {'max_buildings': 150, 'action_points': 40},
+            3: {'max_buildings': 200, 'action_points': 50},
         },
         'upgrade': {
             # Level 1 is the starting level, so we define the cost to get to level 2

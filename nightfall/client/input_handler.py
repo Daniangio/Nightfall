@@ -45,16 +45,20 @@ class InputHandler:
         self.ui_manager.game_state_for_input = predicted_state
 
         # Handle splitter drag separately as it can override other inputs
-        self._handle_splitter_drag(events)
+        self._handle_splitter_drag(events, action_queue)
+        self._handle_queue_splitter_drag(events, action_queue)
 
         for event in events:
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1: # Left click
                     return self._handle_mouse_down(event.pos, predicted_state, action_queue)
             elif event.type == pygame.MOUSEBUTTONUP:
-                # Always release splitter drag on mouse up
+                # Always release splitter drags on mouse up
                 if self.ui_manager.is_dragging_splitter:
                     self.ui_manager.is_dragging_splitter = False
+                if self.ui_manager.is_dragging_queue_splitter:
+                    self.ui_manager.is_dragging_queue_splitter = False
+
                 if event.button == 1: # Left click
                     return self._handle_mouse_up(event.pos, predicted_state, action_queue)
             elif event.type == pygame.MOUSEMOTION:
@@ -86,6 +90,11 @@ class InputHandler:
         if self.ui_manager.splitter_rect.collidepoint(mouse_pos):
             self.ui_manager.is_dragging_splitter = True
             return None # Don't process other clicks if we're starting a splitter drag
+        
+        # Check if the queue splitter was clicked
+        if self.ui_manager.queue_splitter_rect.collidepoint(mouse_pos):
+            self.ui_manager.is_dragging_queue_splitter = True
+            return None
 
         # If the click is in the main view area, prepare for a potential drag.
         # We don't set is_dragging to True yet, that happens on mouse motion.
@@ -98,7 +107,7 @@ class InputHandler:
 
     def _handle_mouse_up(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
         """Handles the moment the left mouse button is released."""
-        # If we were dragging the splitter, the action is over.
+        # If we were dragging a splitter, the action is over.
         if self.ui_manager.is_dragging_splitter:
             return None
 
@@ -114,7 +123,7 @@ class InputHandler:
 
     def _handle_mouse_motion(self, mouse_pos: tuple[int, int], buttons: tuple):
         """Handles mouse movement, specifically for dragging the map."""
-        # If we are dragging the splitter, don't also drag the map
+        # If we are dragging a splitter, don't also drag the map
         if self.ui_manager.is_dragging_splitter:
             return
 
@@ -150,16 +159,45 @@ class InputHandler:
                     clamped_y = max(0, min(new_y, max_y))
                     self.ui_manager.city_camera_offset = Position(clamped_x, clamped_y)
     
-    def _handle_splitter_drag(self, events: list):
+    def _handle_splitter_drag(self, events: list, action_queue: list):
         """Handles events related to dragging the UI splitter."""
         for event in events:
             if event.type == pygame.MOUSEMOTION and self.ui_manager.is_dragging_splitter:
                 new_panel_width = self.ui_manager.screen_width - event.pos[0]
-                self.ui_manager.update_side_panel_width(new_panel_width)
+                self.ui_manager.update_side_panel_width(new_panel_width, action_queue)
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 if self.ui_manager.is_dragging_splitter:
                     self.ui_manager.is_dragging_splitter = False
 
+    def _handle_queue_splitter_drag(self, events: list, action_queue: list):
+        """Handles events for dragging the splitter between queue panels."""
+        for event in events:
+            if event.type == pygame.MOUSEMOTION and self.ui_manager.is_dragging_queue_splitter:
+                # Calculate the new split ratio
+                total_y_start = self.ui_manager.resource_panel_rect.bottom + 10 # This is a bit of a magic number, but it's consistent
+                total_y_end = self.ui_manager.buttons['end_day'].top - 10
+                total_height = total_y_end - total_y_start
+                if total_height <= 0: return
+
+                splitter_pos_relative = event.pos[1] - total_y_start
+                
+                # --- Calculate the maximum allowed height for the build queue panel ---
+                # This is the height required to show all items *without* scrolling.
+                # This prevents the user from dragging it to a size that causes the "pop" and overlap.
+                queue_header_height = 40
+                item_height = 30
+                build_queue_len = len(action_queue)
+                max_content_height = queue_header_height + (build_queue_len * item_height)
+
+                # The splitter position should not go beyond this calculated max height.
+                clamped_splitter_pos = min(splitter_pos_relative, max_content_height)
+
+                new_ratio = clamped_splitter_pos / total_height
+                self.ui_manager.queue_split_ratio = max(0.05, min(0.95, new_ratio)) # Clamp between 5% and 95% of total space
+                self.ui_manager.update_queue_layouts(action_queue)
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                if self.ui_manager.is_dragging_queue_splitter:
+                    self.ui_manager.is_dragging_queue_splitter = False
 
     def _handle_mouse_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
         """Handles a single, discrete mouse click (not a drag)."""
@@ -168,6 +206,20 @@ class InputHandler:
             if rect.collidepoint(mouse_pos):
                 if name == "end_day":
                     return {"type": "end_day"}
+                elif name == "build_queue_scroll_up":
+                    if self.ui_manager.build_queue_scroll_offset > 0:
+                        self.ui_manager.build_queue_scroll_offset -= 1
+                    return None
+                elif name == "build_queue_scroll_down":
+                    self.ui_manager.build_queue_scroll_offset += 1 # UIManager will clamp it
+                    return None
+                elif name == "unit_queue_scroll_up":
+                    if self.ui_manager.unit_queue_scroll_offset > 0:
+                        self.ui_manager.unit_queue_scroll_offset -= 1
+                    return None
+                elif name == "unit_queue_scroll_down":
+                    self.ui_manager.unit_queue_scroll_offset += 1 # UIManager will clamp it
+                    return None
                 elif name == "exit_session":
                     return {"type": "exit_session"}
 
@@ -224,8 +276,14 @@ class InputHandler:
         if self.ui_manager.context_menu and self.ui_manager.context_menu['rect'].collidepoint(mouse_pos):
             return self._handle_context_menu_click(mouse_pos, state, action_queue)
 
+        # The remove button rects are now for *visible* items. We need to map back to the absolute index.
         for i, rect in enumerate(self.ui_manager.queue_item_remove_button_rects):
-             if rect.collidepoint(mouse_pos): return {"type": "remove_action", "index": i}
+             if rect.collidepoint(mouse_pos):
+                 # 'i' is the index in the visible list. We need the absolute index in the full action_queue.
+                 absolute_index = self.ui_manager.build_queue_scroll_offset + i
+                 return {"type": "remove_action", "index": absolute_index}
+
+        # Note: We don't have remove buttons for the unit queue yet, so no input handling is needed there.
 
         grid_pos = self.ui_manager.screen_to_grid(mouse_pos)
         if grid_pos:

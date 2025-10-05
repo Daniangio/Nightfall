@@ -1193,9 +1193,9 @@
                 ]
             },
             "resources": {
-                "food": 1228,
-                "wood": 360,
-                "iron": 3040
+                "food": 10000,
+                "wood": 10000,
+                "iron": 10000
             },
             "build_queue": []
         }

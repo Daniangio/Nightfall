@@ -44,7 +44,9 @@ class UIManager:
         self.side_panel_rect = pygame.Rect(0, 0, 0, 0)
         self.top_bar_rect = pygame.Rect(0, 0, 0, 0)
         self.resource_panel_rect = pygame.Rect(0, 0, 0, 0)
-        self.queue_panel_rect = pygame.Rect(0, 0, 0, 0)
+        self.build_queue_panel_rect = pygame.Rect(0, 0, 0, 0)
+        self.queue_splitter_rect = pygame.Rect(0, 0, 0, 0)
+        self.unit_queue_panel_rect = pygame.Rect(0, 0, 0, 0)
         self.splitter_rect = pygame.Rect(0, 0, 0, 0)
 
         # --- UI Buttons ---
@@ -57,21 +59,30 @@ class UIManager:
         self.queue_item_remove_button_rects = []
         self.predicted_production = None
 
+        # --- Scroll State ---
+        self.build_queue_scroll_offset = 0
+        self.unit_queue_scroll_offset = 0
+        self.build_queue_visible_items = 0
+        self.unit_queue_visible_items = 0
+
+
         # Lobby UI State
         self.lobby_buttons = {} # "create" or session_id -> rect
 
         # --- Resizable Panel State ---
         self.side_panel_width = DEFAULT_SIDE_PANEL_WIDTH
         self.is_dragging_splitter = False
+        self.queue_split_ratio = 0.5 # Ratio of space for the TOP (build) queue. 0.0 to 1.0
+        self.is_dragging_queue_splitter = False
 
         # Initial layout calculation
         self.on_resize(self.screen_width, self.screen_height)
 
-    def on_resize(self, width: int, height: int):
+    def on_resize(self, width: int, height: int, action_queue: Optional[list] = None):
         """Recalculates all UI element positions and sizes based on the new window size."""
         # Maintain the panel's width ratio during window resize
         width_ratio = width / self.screen_width if self.screen_width > 0 else 1
-        self.side_panel_width = self.side_panel_width * width_ratio
+        self.side_panel_width = int(self.side_panel_width * width_ratio)
 
         self.screen_width = width
         self.screen_height = height
@@ -91,11 +102,74 @@ class UIManager:
         self.buttons['exit_session'] = pygame.Rect(self.side_panel_rect.right - 160, 5, 150, 30)
         self.buttons['end_day'] = pygame.Rect(self.side_panel_rect.x + (self.side_panel_rect.width - 250) // 2, self.screen_height - 70, 250, 50)
         self.resource_panel_rect = pygame.Rect(self.side_panel_rect.x + 10, 100, self.side_panel_rect.width - 20, 120)
-        self.queue_panel_rect = pygame.Rect(self.side_panel_rect.x + 10, self.resource_panel_rect.bottom + 10, self.side_panel_rect.width - 20, 300)
+        
+        self.update_queue_layouts(action_queue if action_queue is not None else [])
 
-    def update_side_panel_width(self, new_width: int):
+    def update_queue_layouts(self, build_action_queue: list):
+        """Calculates the layout for the build and unit queue panels."""
+        # --- Constants for queue panels ---
+        queue_header_height = 40 # Space for title
+        item_height = 30 # Height of one queue item
+        scroll_button_space = 35 # Extra padding needed if scroll buttons are visible
+        min_panel_height = queue_header_height
+        
+        # --- Calculate available space for both queues ---
+        total_available_y_start = self.resource_panel_rect.bottom + 10
+        total_available_y_end = self.buttons['end_day'].top - 10
+        total_available_height = total_available_y_end - total_available_y_start
+
+        # --- Determine required height for each queue based on content ---
+        build_queue_len = len(build_action_queue)
+        unit_queue_len = 0 # We need to get this from the game state
+        if self.game_state_for_input and self.viewed_city_id:
+            city = self.game_state_for_input.cities.get(self.viewed_city_id)
+            if city:
+                unit_queue_len = len(city.recruitment_queue)
+
+        build_content_height = min_panel_height + (build_queue_len * item_height)
+        unit_content_height = min_panel_height + (unit_queue_len * item_height)
+
+        # If content fits, shrink panels to content size to create the "dynamic" feel
+        if build_content_height + unit_content_height < total_available_height:
+            build_queue_height = build_content_height
+            unit_queue_height = unit_content_height
+            # IMPORTANT: Update the split ratio to match the content-fitted size.
+            # This prevents the layout from snapping back to the old ratio when content overflows later.
+            if total_available_height > 0:
+                 # We calculate the ratio based on the bottom of the unit queue panel
+                 self.queue_split_ratio = build_queue_height / total_available_height
+        else:
+            # --- Allocate space based on the split ratio if content overflows ---
+            build_queue_height = max(min_panel_height, total_available_height * self.queue_split_ratio)
+            unit_queue_height = max(min_panel_height, total_available_height * (1 - self.queue_split_ratio))
+
+        # --- Set final Rects ---
+        panel_x = self.side_panel_rect.x + 10
+        panel_width = self.side_panel_rect.width - 20
+        self.build_queue_panel_rect = pygame.Rect(panel_x, total_available_y_start, panel_width, build_queue_height)
+        self.queue_splitter_rect = pygame.Rect(panel_x, self.build_queue_panel_rect.bottom, panel_width, SPLITTER_WIDTH)
+        self.unit_queue_panel_rect = pygame.Rect(panel_x, self.queue_splitter_rect.bottom, panel_width, unit_queue_height)
+
+        # --- Calculate visible items (and if scroll buttons are needed) ---
+        build_panel_content_area = self.build_queue_panel_rect.height - queue_header_height
+        potential_visible_items = max(0, build_panel_content_area // item_height)
+        # If scrolling will be needed, reserve space for the buttons, which might reduce the number of visible items.
+        if build_queue_len > potential_visible_items:
+            self.build_queue_visible_items = max(0, (build_panel_content_area - scroll_button_space) // item_height)
+        else:
+            self.build_queue_visible_items = potential_visible_items
+
+        unit_panel_content_area = self.unit_queue_panel_rect.height - queue_header_height
+        self.unit_queue_visible_items = max(0, unit_panel_content_area // item_height)
+        if unit_queue_len > self.unit_queue_visible_items: # If scrolling is needed
+            self.unit_queue_visible_items = max(0, (unit_panel_content_area - scroll_button_space) // item_height)
+
+        self.buttons['build_queue_scroll_up'] = pygame.Rect(self.build_queue_panel_rect.right - 40, self.build_queue_panel_rect.y + 10, 20, 20)
+        self.buttons['build_queue_scroll_down'] = pygame.Rect(self.build_queue_panel_rect.right - 40, self.build_queue_panel_rect.bottom - 30, 20, 20)
+
+    def update_side_panel_width(self, new_width: int, action_queue: list):
         self.side_panel_width = new_width
-        self.on_resize(self.screen_width, self.screen_height)
+        self.on_resize(self.screen_width, self.screen_height, action_queue)
 
     def get_city_tile_rect(self, x, y):
         from nightfall.client.renderer import CITY_TILE_SIZE
@@ -283,23 +357,35 @@ class UIManager:
         grid_y = local_y // CITY_TILE_SIZE
         return Position(grid_x, grid_y)
 
-    def get_queue_item_rect(self, item_index: int) -> pygame.Rect:
+    def get_build_queue_item_rect(self, item_index: int) -> pygame.Rect:
         """Gets the rect for the entire queue item row."""
-        item_y = self.queue_panel_rect.y + 50 + item_index * 30
-        return pygame.Rect(self.queue_panel_rect.x + 10, item_y, self.queue_panel_rect.width - 20, 25)
+        # item_index here is the VISIBLE index (0, 1, 2...)
+        visible_index = item_index
+        item_y = self.build_queue_panel_rect.y + 40 + visible_index * 30
+        return pygame.Rect(self.build_queue_panel_rect.x + 10, item_y, self.build_queue_panel_rect.width - 20, 25)
 
-    def get_queue_item_remove_button_rect(self, item_index: int) -> pygame.Rect:
+    def get_build_queue_item_remove_button_rect(self, item_index: int) -> pygame.Rect:
         """Gets the rect for the 'X' remove button on a queue item."""
-        item_rect = self.get_queue_item_rect(item_index)
+        item_rect = self.get_build_queue_item_rect(item_index)
         return pygame.Rect(item_rect.right - 25, item_rect.y, 20, 25)
-
+    
     def update_action_queue_ui(self, action_queue: list):
-        """Updates the list of rects for the action queue 'remove' buttons."""
+        """Updates the list of rects for the *visible* action queue 'remove' buttons."""
         self.queue_item_rects.clear()
         self.queue_item_remove_button_rects.clear()
-        for i in range(len(action_queue)):
-            self.queue_item_rects.append(self.get_queue_item_rect(i))
-            self.queue_item_remove_button_rects.append(self.get_queue_item_remove_button_rect(i))
+
+        # Clamp scroll offset
+        max_scroll = max(0, len(action_queue) - self.build_queue_visible_items)
+        self.build_queue_scroll_offset = max(0, min(self.build_queue_scroll_offset, max_scroll))
+        self.update_queue_layouts(action_queue) # Recalculate layout based on new queue length
+
+        start_index = self.build_queue_scroll_offset
+        end_index = self.build_queue_scroll_offset + self.build_queue_visible_items
+
+        for i, absolute_index in enumerate(range(start_index, min(end_index, len(action_queue)))):
+            # Pass the visible index (i) to get the correct screen position
+            self.queue_item_rects.append(self.get_build_queue_item_rect(i))
+            self.queue_item_remove_button_rects.append(self.get_build_queue_item_remove_button_rect(i))
 
     def update_lobby_buttons(self, sessions: dict):
         """Create and position buttons for the lobby screen."""

@@ -53,7 +53,7 @@ class GameClient:
                 elif event.type == pygame.VIDEORESIZE:
                     # The window was resized, re-create the screen surface and update UI
                     self.screen = pygame.display.set_mode((event.w, event.h), pygame.RESIZABLE)
-                    self.ui_manager.on_resize(event.w, event.h)
+                    self.ui_manager.on_resize(event.w, event.h, self.action_queue)
 
             self._handle_network_updates()
             

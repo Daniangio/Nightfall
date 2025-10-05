@@ -161,22 +161,90 @@ class Renderer:
         self.draw_text(f"Iron: {res.iron} (+{production.iron})", (resource_rect.x + 20, res_y), self.font_s)
 
         # --- Build Queue Canvas (bottom) ---
-        queue_rect = ui_manager.queue_panel_rect
-        pygame.draw.rect(self.screen, C_DARK_GRAY, queue_rect, border_radius=8)
-        self.draw_text(f"Build Queue:", (queue_rect.x + 20, queue_rect.y + 15), self.font_m)
-        for i, action in enumerate(action_queue):
-            item_rect = ui_manager.get_queue_item_rect(i)
+        build_queue_rect = ui_manager.build_queue_panel_rect
+        pygame.draw.rect(self.screen, C_DARK_GRAY, build_queue_rect, border_radius=8)
+        self.draw_text(f"Building Queue ({len(action_queue)})", (build_queue_rect.x + 20, build_queue_rect.y + 10), self.font_s)
+
+        # Draw scroll buttons for build queue
+        can_scroll_up = ui_manager.build_queue_scroll_offset > 0
+        can_scroll_down = ui_manager.build_queue_scroll_offset + ui_manager.build_queue_visible_items < len(action_queue)
+        
+        # Only draw scroll buttons if the panel is large enough to need them
+        if build_queue_rect.height > 50 and (can_scroll_up or can_scroll_down):
+            up_rect = ui_manager.buttons.get('build_queue_scroll_up')
+            down_rect = ui_manager.buttons.get('build_queue_scroll_down')
+            if up_rect and can_scroll_up: self.draw_scroll_button(up_rect, '^', True)
+            if down_rect and can_scroll_down: self.draw_scroll_button(down_rect, 'v', True)
+
+        # Draw visible build queue items
+        start_index = ui_manager.build_queue_scroll_offset
+        end_index = start_index + ui_manager.build_queue_visible_items
+        visible_actions = action_queue[start_index:min(end_index, len(action_queue))]
+
+        for i, action in enumerate(visible_actions):
+            absolute_index = start_index + i
+            item_rect = ui_manager.get_build_queue_item_rect(i) # Pass visible index 'i'
             pygame.draw.rect(self.screen, C_LIGHT_GRAY, item_rect, border_radius=5)
-            self.draw_text(f"{i+1}. {str(action)}", (item_rect.x + 5, item_rect.y + 2), self.font_s, C_BLACK)
+            self.draw_text(f"{absolute_index + 1}. {str(action)}", (item_rect.x + 5, item_rect.y + 2), self.font_s, C_BLACK)
             
-            x_rect = ui_manager.get_queue_item_remove_button_rect(i)
+            x_rect = ui_manager.get_build_queue_item_remove_button_rect(i) # Pass visible index 'i'
             self.draw_text("X", (x_rect.x + 5, x_rect.y + 2), self.font_s, C_RED)
+
+        # Draw the queue splitter
+        splitter_color = C_YELLOW if ui_manager.is_dragging_queue_splitter else C_LIGHT_GRAY
+        pygame.draw.rect(self.screen, splitter_color, ui_manager.queue_splitter_rect)
+
+        # --- Unit Queue Canvas ---
+        unit_queue_rect = ui_manager.unit_queue_panel_rect
+        unit_queue = city.recruitment_queue
+        pygame.draw.rect(self.screen, C_DARK_GRAY, unit_queue_rect, border_radius=8)
+        self.draw_text(f"Unit Queue ({len(unit_queue)})", (unit_queue_rect.x + 20, unit_queue_rect.y + 10), self.font_s)
+
+        # Draw scroll buttons for unit queue (positions are relative to this panel)
+        unit_can_scroll_up = ui_manager.unit_queue_scroll_offset > 0
+        unit_can_scroll_down = ui_manager.unit_queue_scroll_offset + ui_manager.unit_queue_visible_items < len(unit_queue)
+        up_rect = pygame.Rect(unit_queue_rect.right - 40, unit_queue_rect.y + 10, 20, 20)
+        down_rect = pygame.Rect(unit_queue_rect.right - 40, unit_queue_rect.bottom - 30, 20, 20)
+        if unit_queue_rect.height > 50 and (unit_can_scroll_up or unit_can_scroll_down):
+            if unit_can_scroll_up: self.draw_scroll_button(up_rect, '^', True)
+            if unit_can_scroll_down: self.draw_scroll_button(down_rect, 'v', True)
+        # Store rects for input handler
+        ui_manager.buttons['unit_queue_scroll_up'] = up_rect
+        ui_manager.buttons['unit_queue_scroll_down'] = down_rect
+
+        # Draw visible unit queue items
+        unit_start_index = ui_manager.unit_queue_scroll_offset
+        unit_end_index = unit_start_index + ui_manager.unit_queue_visible_items
+        visible_unit_items = unit_queue[unit_start_index:unit_end_index]
+
+        y_offset = unit_queue_rect.y + 40
+        for i, item in enumerate(visible_unit_items):
+            from nightfall.core.common.game_data import UNIT_DATA
+            time_per_unit = UNIT_DATA[item.unit_type]['base_recruit_time']
+            progress_pct = (item.progress % time_per_unit) / time_per_unit * 100
+            text = f"{item.quantity}x {item.unit_type.name.replace('_', ' ').title()} ({progress_pct:.0f}%)"
+            self.draw_text(text, (unit_queue_rect.x + 20, y_offset + i * 25), self.font_s)
+        
+        # Draw 'more items' indicator for unit queue
+        if unit_can_scroll_down:
+            last_item_y = y_offset + (len(visible_unit_items) -1) * 25
+            if unit_queue_rect.bottom - last_item_y > 35: # Check if there's space
+                self.draw_text("...", (unit_queue_rect.x + 20, last_item_y + 20), self.font_s)
 
         # Draw main action buttons
         end_day_rect = ui_manager.buttons['end_day']
         pygame.draw.rect(self.screen, C_GREEN, end_day_rect, border_radius=5)
         self.draw_text("Ready (End Day)", (end_day_rect.x + 30, end_day_rect.y + 15), self.font_m)
 
+
+    def draw_scroll_button(self, rect, text, is_enabled):
+        """Draws a single scroll arrow button."""
+        color = C_BLUE if is_enabled else C_DARK_GRAY
+        text_color = C_WHITE if is_enabled else C_LIGHT_GRAY
+        pygame.draw.rect(self.screen, color, rect, border_radius=5)
+        text_surf = self.font_m.render(text, True, text_color)
+        text_rect = text_surf.get_rect(center=rect.center)
+        self.screen.blit(text_surf, text_rect)
 
     def draw_context_menu(self, city, ui_manager):
         if not ui_manager.context_menu:
