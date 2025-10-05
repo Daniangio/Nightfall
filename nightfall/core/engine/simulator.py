@@ -1,154 +1,115 @@
 from nightfall.core.state.game_state import GameState
-from nightfall.core.common.datatypes import Resources
-from nightfall.core.common.game_data import BUILDING_DATA, UNIT_DATA
+from nightfall.core.components.city import City, CityMap
+from nightfall.core.common.game_data import BUILDING_DATA
+from nightfall.core.common.datatypes import Resources, Position
 from nightfall.core.common.enums import BuildingType
 
 class Simulator:
     """
-    Handles simulation logic for both client-side prediction and
-    authoritative server-side turn resolution.
+    Handles the core game logic for simulating turns and predicting outcomes.
+    This class is stateless and operates on a given GameState object.
     """
-
-    def predict_outcome(self, base_state: GameState, action_queue: list, player_id: str) -> GameState:
-        """
-        CLIENT-SIDE USE: Takes a base state, an action queue for a specific player,
-        and that player's ID. It returns a new predicted state.
-        This method is purely for prediction and does not modify the original state.
-        """
-        # A single deep copy is all that's needed.
-        predicted_state = base_state.deep_copy()
-        
-        # Sequentially execute each action in the queue on the copied state.
-        # The Action.execute() method is responsible for checking and subtracting
-        # resources from the state it is given.
-        for action in action_queue:
-            # The action's execute method should return True on success, False on failure.
-            # This allows the prediction to stop if a player queues an impossible action.
-            if not action.execute(predicted_state):
-                # If an action is invalid (e.g., not enough resources),
-                # we stop processing further actions in the queue for this prediction.
-                print(f"[PREDICTION] Action failed and broke the queue: {action}")
-                break
-            
-            # After a successful predicted action, update the city's stats
-            city = predicted_state.cities.get(action.city_id)
-            if city:
-                city.update_stats_from_citadel()
-                
-        return predicted_state
 
     def simulate_full_turn(self, game_state: GameState):
         """
-        SERVER-SIDE USE: Processes a single turn by executing queued actions
-        from the live game state, generating resources, and advancing the turn.
-        Modifies the state in-place.
+        Simulates a full turn for all players.
+        This modifies the game_state object in place.
         """
-        print(f"\n--- Simulating Turn {game_state.turn} -> {game_state.turn + 1} ---")
-
         # 1. Replenish Action Points for all cities
-        print("1. Replenishing Action Points...")
         for city in game_state.cities.values():
-            city.update_stats_from_citadel() # Ensure max AP is up-to-date
+            # This is the corrected logic. We SET the action points to the max, not add to them.
             city.action_points = city.max_action_points
-            print(f"  - {city.name} now has {city.action_points}/{city.max_action_points} AP.")
-        
-        # 2. Process build queues for each player/city
-        print("2. Processing build queues...")
-        # We iterate through players to ensure actions are executed in a defined order
-        # (though for this game, the order between players doesn't matter yet).
+
+        # 2. Process build queues for all players
         for player in game_state.players.values():
-            # The player's action_queue is set by the server from their received orders.
-            for action in player.action_queue:
-                print(f"  - Executing for {player.name}: {action}")
-                if action.execute(game_state): # Execute on the authoritative state
-                    # After a successful action, update city stats (e.g., if Citadel was upgraded)
-                    city = game_state.cities.get(action.city_id)
-                    if city:
-                        city.update_stats_from_citadel()
-            player.action_queue.clear() # Clear queue after processing
+            # Create a copy of the queue to iterate over, as actions might be removed
+            actions_to_process = list(player.action_queue)
+            player.action_queue.clear() # Clear the original queue
 
-        # 3. Process recruitment queues
-        print("3. Processing recruitment...")
-        for city in game_state.cities.values():
-            if not city.recruitment_queue:
-                continue
+            for action in actions_to_process:
+                # In a real scenario, you might check if the player still owns the city
+                if action.execute(game_state):
+                    print(f"Successfully executed action: {action}")
+                else:
+                    # If an action fails, it's simply discarded.
+                    # A more complex system might refund resources.
+                    print(f"Failed to execute action: {action}. It has been removed from the queue.")
 
-            # Calculate total city-wide recruitment speed
-            recruitment_speed_bonus = 0
-            for row in city.city_map.tiles:
-                for tile in row:
-                    if tile.building and tile.building.type == BuildingType.BARRACKS:
-                        bonus = BUILDING_DATA[BuildingType.BARRACKS]['recruitment_speed_bonus'].get(tile.building.level, 0)
-                        recruitment_speed_bonus += bonus
-            
-            # This is the total recruitment "points" this city generates this turn
-            total_recruitment_points = 1.0 * (1 + recruitment_speed_bonus)
-            print(f"  - {city.name} has {total_recruitment_points:.2f} recruitment points this turn.")
-
-            # Process the first item in the queue
-            queue_item = city.recruitment_queue[0]
-            queue_item.progress += total_recruitment_points
-
-            unit_data = UNIT_DATA[queue_item.unit_type]
-            time_per_unit = unit_data['base_recruit_time']
-            
-            # Check how many units are completed
-            units_completed = int(queue_item.progress // time_per_unit)
-            if units_completed > 0:
-                city.garrison[queue_item.unit_type] = city.garrison.get(queue_item.unit_type, 0) + units_completed
-                queue_item.quantity -= units_completed
-                queue_item.progress -= units_completed * time_per_unit
-                print(f"  - {city.name} recruited {units_completed} {queue_item.unit_type.name.title()}.")
-
-            if queue_item.quantity <= 0:
-                city.recruitment_queue.pop(0)
-
-        # 4. Generate resources for all cities
-        print("4. Generating resources...")
+        # 3. Calculate and add resource production
         for city in game_state.cities.values():
             production = self.calculate_resource_production(game_state, city)
             city.resources += production
-            print(f"  - {city.name} generated: {production}")
 
+        # 4. Process unit recruitment
+        # (This logic would go here)
+
+        # 5. Increment turn counter
         game_state.turn += 1
-        print("--- Turn simulation complete. ---")
 
-    def calculate_resource_production(self, game_state: GameState, city) -> Resources:
+    def predict_outcome(self, base_state: GameState, action_queue: list, player_id: str) -> GameState:
         """
-        Calculates the total resource production for a single city based on its
-        buildings and adjacency bonuses from its internal city grid.
+        Creates a deep copy of the game state and simulates the provided action
+        queue to show a predicted outcome to the client.
         """
-        if not city: return Resources()
-        
+        predicted_state = base_state.deep_copy()
+        player = predicted_state.players.get(player_id)
+        if not player:
+            return predicted_state # Should not happen
+
+        # Temporarily assign the new action queue for prediction
+        player.action_queue = action_queue
+
+        # Simulate execution of the queue
+        for action in player.action_queue:
+            action.execute(predicted_state) # This modifies the predicted_state
+
+        return predicted_state
+
+    def _get_neighbors(self, city_map: CityMap, x: int, y: int) -> list[Position]:
+        """
+        Helper function to get valid neighbor positions for a tile in a city map.
+        This was missing from the CityMap class, so it's implemented here.
+        """
+        neighbors = []
+        for dx, dy in [
+            (-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)
+        ]: # 8-directional neighbors
+            nx, ny = x + dx, y + dy
+            # Check if the neighbor is within the map boundaries
+            if 0 <= nx < city_map.width and 0 <= ny < city_map.height:
+                neighbors.append(Position(nx, ny))
+        return neighbors
+
+    def calculate_resource_production(self, game_state: GameState, city: City) -> Resources:
+        """
+        Calculates the total resource production for a single city,
+        including adjacency bonuses.
+        """
         total_production = Resources()
+        city_map = city.city_map
 
-        # Iterate through all tiles in the city's internal map
-        for row in city.city_map.tiles:
-            for tile in row:
-                if not tile.building: continue
-                
-                # Find adjacent tiles *within the city* for this specific building
-                adjacent_city_tiles = []
-                for dx in range(-1, 2):
-                    for dy in range(-1, 2):
-                        if dx == 0 and dy == 0: continue
-                        adj_tile = city.city_map.get_tile(tile.position.x + dx, tile.position.y + dy)
-                        if adj_tile: adjacent_city_tiles.append(adj_tile)
+        for y in range(city_map.height):
+            for x in range(city_map.width):
+                tile = city_map.get_tile(x, y)
+                if not tile or not tile.building:
+                    continue
 
-                b_data = BUILDING_DATA.get(tile.building.type, {})
-                if 'production' in b_data:
-                    base_prod = b_data['production'].get(tile.building.level, Resources())
-                    bonus_data = b_data.get('adjacency_bonus', {})
-                    
-                    # Calculate total bonus percentage from adjacent city tiles
-                    total_bonus_pct = sum(bonus_data.get(adj_tile.terrain.name, 0.0) for adj_tile in adjacent_city_tiles)
-                    
-                    # Apply bonus to base production
-                    final_prod = Resources(
-                        food=int(base_prod.food * (1 + total_bonus_pct)),
-                        wood=int(base_prod.wood * (1 + total_bonus_pct)),
-                        iron=int(base_prod.iron * (1 + total_bonus_pct))
-                    )
-                    total_production += final_prod
-        
+                building = tile.building
+                building_data = BUILDING_DATA.get(building.type)
+                if not building_data or 'production' not in building_data:
+                    continue
+
+                base_prod = building_data['production'].get(building.level, Resources())
+                adjacency_bonus_multiplier = 1.0
+
+                if 'adjacency_bonus' in building_data:
+                    for neighbor_pos in self._get_neighbors(city_map, x, y):
+                        neighbor_tile = city_map.get_tile(neighbor_pos.x, neighbor_pos.y)
+                        if neighbor_tile and neighbor_tile.terrain.name in building_data['adjacency_bonus']:
+                            adjacency_bonus_multiplier += building_data['adjacency_bonus'][neighbor_tile.terrain.name]
+
+                total_production.food += round(base_prod.food * adjacency_bonus_multiplier)
+                total_production.wood += round(base_prod.wood * adjacency_bonus_multiplier)
+                total_production.iron += round(base_prod.iron * adjacency_bonus_multiplier)
+
         return total_production

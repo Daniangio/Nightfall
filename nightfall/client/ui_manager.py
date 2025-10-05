@@ -204,7 +204,8 @@ class UIManager:
                 'action': data['action'],
                 'building_type': data.get('building_type'),
                 'is_enabled': data.get('is_enabled', True),
-                'disabled_reason': data.get('disabled_reason')
+                'disabled_reason': data.get('disabled_reason'),
+                'action_index': data.get('action_index') # Pass the index for cancel actions
             })
         
         # Calculate the full bounding rect for the menu
@@ -238,15 +239,21 @@ class UIManager:
         city = game_state.cities[city_id]
         player_resources = city.resources
 
-        # Check if an action is already queued for this tile
-        is_tile_in_queue = any(hasattr(a, 'position') and a.position == grid_pos for a in action_queue)
-        if is_tile_in_queue:
-            # If an action is queued, all options are disabled. We can show a placeholder.
+        # Check if an action is already queued for this tile and find its index
+        action_index_in_queue = -1
+        for i, action in enumerate(action_queue):
+            if hasattr(action, 'position') and action.position == grid_pos:
+                action_index_in_queue = i
+                break
+
+        if action_index_in_queue != -1:
+            # If an action is queued, the only option is to cancel it.
             return [{
-                'text': "Action Queued",
-                'action': 'none',
-                'is_enabled': False,
-                'disabled_reason': "An action for this tile is already in the queue."
+                'text': "Cancel Queued Action",
+                'action': 'cancel_action',
+                'is_enabled': True,
+                'action_index': action_index_in_queue,
+                'disabled_reason': None
             }]
 
         if tile.building:

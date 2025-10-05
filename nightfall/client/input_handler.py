@@ -341,6 +341,11 @@ class InputHandler:
 
                 action_type = option['action']
 
+                # Handle cancellation first, as it's a special case that bypasses the queue check.
+                if action_type == 'cancel_action':
+                    self.ui_manager.clear_context_menu()
+                    return {"type": "remove_action", "index": option['action_index']}
+
                 # --- Action Queue Validation ---
                 is_tile_in_queue = any(hasattr(a, 'position') and a.position == selected_pos for a in action_queue)
                 if is_tile_in_queue:
