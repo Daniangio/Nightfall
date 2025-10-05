@@ -187,8 +187,15 @@ class Renderer:
             pygame.draw.rect(self.screen, C_LIGHT_GRAY, item_rect, border_radius=5)
             self.draw_text(f"{absolute_index + 1}. {str(action)}", (item_rect.x + 5, item_rect.y + 2), self.font_s, C_BLACK)
             
-            x_rect = ui_manager.get_build_queue_item_remove_button_rect(i) # Pass visible index 'i'
-            self.draw_text("X", (x_rect.x + 5, x_rect.y + 2), self.font_s, C_RED)
+            x_rect = ui_manager.get_build_queue_item_remove_button_rect(i)
+            
+            # Draw hover highlight for the remove button
+            if ui_manager.hovered_remove_button_index == i:
+                pygame.draw.rect(self.screen, (100, 100, 100), x_rect, border_radius=3)
+
+            # Draw the 'X' centered in its button rect
+            text_surf = self.font_s.render("X", True, C_RED)
+            self.screen.blit(text_surf, text_surf.get_rect(center=x_rect.center))
 
         # Draw the queue splitter
         splitter_color = C_YELLOW if ui_manager.is_dragging_queue_splitter else C_LIGHT_GRAY

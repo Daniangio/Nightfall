@@ -57,6 +57,7 @@ class UIManager:
         # Action Queue UI State
         self.queue_item_rects = []
         self.queue_item_remove_button_rects = []
+        self.hovered_remove_button_index: Optional[int] = None
         self.predicted_production = None
 
         # --- Scroll State ---

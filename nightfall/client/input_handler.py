@@ -127,6 +127,14 @@ class InputHandler:
         if self.ui_manager.is_dragging_splitter:
             return
 
+        # --- Handle Hover Effects ---
+        # Reset hover state
+        self.ui_manager.hovered_remove_button_index = None
+        # Check if hovering over any build queue remove buttons
+        for i, rect in enumerate(self.ui_manager.queue_item_remove_button_rects):
+            if rect.collidepoint(mouse_pos):
+                self.ui_manager.hovered_remove_button_index = i
+
         # A drag only starts if the mouse moves while the button is down,
         # and a drag start position has been recorded.
         if self.ui_manager.drag_start_pos and buttons[0]:
