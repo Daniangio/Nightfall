@@ -1,5 +1,7 @@
 import pygame
 
+from nightfall.client.ui.components.panel_component import SidePanelComponent
+from nightfall.core.state.game_state import GameState
 from nightfall.client.enums import ActiveView
 # Constants
 CITY_TILE_SIZE = 50
@@ -15,11 +17,16 @@ WORLD_TERRAIN_COLORS = {'PLAINS': (152, 251, 152), 'FOREST': (34, 139, 34), 'MOU
 CITY_TERRAIN_COLORS = {'GRASS': (50, 205, 50), 'FOREST_PLOT': (139, 69, 19), 'IRON_DEPOSIT': C_LIGHT_GRAY, 'WATER': C_BLUE}
 
 class Renderer:
-    """Handles all drawing to the screen."""
+    """
+    The main rendering coordinator.
+    In a component-based system, this class's role is to iterate through
+    UI components and delegate the drawing responsibility to them.
+    """
     def __init__(self, screen):
         self.screen = screen
         self.font_s = pygame.font.Font(None, 24)
-        self.font_m = pygame.font.Font(None, 32)
+        self.font_m = pygame.font.Font(None, 32) 
+        # The renderer will eventually not need these, but components might borrow them for now.
 
     def draw(self, game_state, ui_manager, production, action_queue):
         self.screen.fill(C_BLACK)
@@ -38,22 +45,17 @@ class Renderer:
         # Draw UI Panel over the main view
         city_id = ui_manager.viewed_city_id or "city1" # Fallback for panel
         city_for_panel = game_state.cities.get(city_id)
-        # Draw the resizable splitter
-        self.draw_splitter(ui_manager)
-
-        self.draw_ui_panel(game_state, city_for_panel, production, ui_manager, action_queue)
-
-        # Draw top bar over everything else
+        
+        # --- Component-Based Drawing ---
+        for component in ui_manager.components:
+            component.draw(self.screen, game_state=game_state, city=city_for_panel, production=production, action_queue=action_queue)
+        
+        # Draw top bar over everything else (order matters)
         self.draw_top_bar(ui_manager)
 
     def draw_text(self, text, pos, font, color=C_WHITE):
         surface = font.render(text, True, color)
         self.screen.blit(surface, pos)
-
-    def draw_splitter(self, ui_manager):
-        """Draws the draggable splitter between the main view and the side panel."""
-        color = C_YELLOW if ui_manager.is_dragging_splitter else C_LIGHT_GRAY
-        pygame.draw.rect(self.screen, color, ui_manager.splitter_rect)
 
     def draw_top_bar(self, ui_manager):
         """Draws the top navigation bar."""
@@ -124,126 +126,6 @@ class Renderer:
         
         self.draw_context_menu(city, ui_manager)
 
-    def draw_ui_panel(self, game_state, city, production, ui_manager, action_queue):
-        side_panel_rect = ui_manager.side_panel_rect
-        self.screen.fill(C_GRAY, side_panel_rect) # The main tool canvas
-
-        y = 20
-        if not city: # Handle case where no city is selected
-            self.draw_text("No city selected.", (side_panel_rect.x + 20, y), self.font_m)
-            return
-        
-        # Draw global buttons that belong on the UI panel
-        exit_rect = ui_manager.buttons['exit_session']
-        pygame.draw.rect(self.screen, C_RED, exit_rect, border_radius=5)
-        text_surf = self.font_s.render("Exit to Lobby", True, C_WHITE)
-        text_rect = text_surf.get_rect(center=exit_rect.center)
-        self.screen.blit(text_surf, text_rect)
-
-        self.draw_text(f"City: {city.name}", (side_panel_rect.x + 20, y), self.font_m)
-        y += 40
-        self.draw_text(f"Turn: {game_state.turn}", (side_panel_rect.x + 20, y), self.font_m)
-        y += 40
-        
-        # --- Resources & City Stats ---
-        # This is the "resource canvas (top)"
-        resource_rect = ui_manager.resource_panel_rect
-        pygame.draw.rect(self.screen, C_DARK_GRAY, resource_rect, border_radius=8)
-        res_y = resource_rect.y + 15
-        stats_x_offset = resource_rect.x + 220
-        res = city.resources
-        self.draw_text(f"Food: {res.food} (+{production.food if production else 0})", (resource_rect.x + 20, res_y), self.font_s)
-        self.draw_text(f"Action Points: {city.action_points} / {city.max_action_points}", (stats_x_offset, res_y), self.font_s)
-        res_y += 25
-        self.draw_text(f"Wood: {res.wood} (+{production.wood})", (resource_rect.x + 20, res_y), self.font_s)
-        self.draw_text(f"Buildings: {city.num_buildings} / {city.max_buildings}", (stats_x_offset, res_y), self.font_s)
-        res_y += 25
-        self.draw_text(f"Iron: {res.iron} (+{production.iron})", (resource_rect.x + 20, res_y), self.font_s)
-
-        # --- Build Queue Canvas (bottom) ---
-        build_queue_rect = ui_manager.build_queue_panel_rect
-        pygame.draw.rect(self.screen, C_DARK_GRAY, build_queue_rect, border_radius=8)
-        self.draw_text(f"Building Queue ({len(action_queue)})", (build_queue_rect.x + 20, build_queue_rect.y + 10), self.font_s)
-
-        # Draw scroll buttons for build queue
-        can_scroll_up = ui_manager.build_queue_scroll_offset > 0
-        can_scroll_down = ui_manager.build_queue_scroll_offset + ui_manager.build_queue_visible_items < len(action_queue)
-        
-        # Only draw scroll buttons if the panel is large enough to need them
-        if build_queue_rect.height > 50 and (can_scroll_up or can_scroll_down):
-            up_rect = ui_manager.buttons.get('build_queue_scroll_up')
-            down_rect = ui_manager.buttons.get('build_queue_scroll_down')
-            if up_rect and can_scroll_up: self.draw_scroll_button(up_rect, '^', True)
-            if down_rect and can_scroll_down: self.draw_scroll_button(down_rect, 'v', True)
-
-        # Draw visible build queue items
-        start_index = ui_manager.build_queue_scroll_offset
-        end_index = start_index + ui_manager.build_queue_visible_items
-        visible_actions = action_queue[start_index:min(end_index, len(action_queue))]
-
-        for i, action in enumerate(visible_actions):
-            absolute_index = start_index + i
-            item_rect = ui_manager.get_build_queue_item_rect(i) # Pass visible index 'i'
-            pygame.draw.rect(self.screen, C_LIGHT_GRAY, item_rect, border_radius=5)
-            self.draw_text(f"{absolute_index + 1}. {str(action)}", (item_rect.x + 5, item_rect.y + 2), self.font_s, C_BLACK)
-            
-            x_rect = ui_manager.get_build_queue_item_remove_button_rect(i)
-            
-            # Draw hover highlight for the remove button
-            if ui_manager.hovered_remove_button_index == i:
-                pygame.draw.rect(self.screen, (100, 100, 100), x_rect, border_radius=3)
-
-            # Draw the 'X' centered in its button rect
-            text_surf = self.font_s.render("X", True, C_RED)
-            self.screen.blit(text_surf, text_surf.get_rect(center=x_rect.center))
-
-        # Draw the queue splitter
-        splitter_color = C_YELLOW if ui_manager.is_dragging_queue_splitter else C_LIGHT_GRAY
-        pygame.draw.rect(self.screen, splitter_color, ui_manager.queue_splitter_rect)
-
-        # --- Unit Queue Canvas ---
-        unit_queue_rect = ui_manager.unit_queue_panel_rect
-        unit_queue = city.recruitment_queue
-        pygame.draw.rect(self.screen, C_DARK_GRAY, unit_queue_rect, border_radius=8)
-        self.draw_text(f"Unit Queue ({len(unit_queue)})", (unit_queue_rect.x + 20, unit_queue_rect.y + 10), self.font_s)
-
-        # Draw scroll buttons for unit queue (positions are relative to this panel)
-        unit_can_scroll_up = ui_manager.unit_queue_scroll_offset > 0
-        unit_can_scroll_down = ui_manager.unit_queue_scroll_offset + ui_manager.unit_queue_visible_items < len(unit_queue)
-        up_rect = pygame.Rect(unit_queue_rect.right - 40, unit_queue_rect.y + 10, 20, 20)
-        down_rect = pygame.Rect(unit_queue_rect.right - 40, unit_queue_rect.bottom - 30, 20, 20)
-        if unit_queue_rect.height > 50 and (unit_can_scroll_up or unit_can_scroll_down):
-            if unit_can_scroll_up: self.draw_scroll_button(up_rect, '^', True)
-            if unit_can_scroll_down: self.draw_scroll_button(down_rect, 'v', True)
-        # Store rects for input handler
-        ui_manager.buttons['unit_queue_scroll_up'] = up_rect
-        ui_manager.buttons['unit_queue_scroll_down'] = down_rect
-
-        # Draw visible unit queue items
-        unit_start_index = ui_manager.unit_queue_scroll_offset
-        unit_end_index = unit_start_index + ui_manager.unit_queue_visible_items
-        visible_unit_items = unit_queue[unit_start_index:unit_end_index]
-
-        y_offset = unit_queue_rect.y + 40
-        for i, item in enumerate(visible_unit_items):
-            from nightfall.core.common.game_data import UNIT_DATA
-            time_per_unit = UNIT_DATA[item.unit_type]['base_recruit_time']
-            progress_pct = (item.progress % time_per_unit) / time_per_unit * 100
-            text = f"{item.quantity}x {item.unit_type.name.replace('_', ' ').title()} ({progress_pct:.0f}%)"
-            self.draw_text(text, (unit_queue_rect.x + 20, y_offset + i * 25), self.font_s)
-        
-        # Draw 'more items' indicator for unit queue
-        if unit_can_scroll_down:
-            last_item_y = y_offset + (len(visible_unit_items) -1) * 25
-            if unit_queue_rect.bottom - last_item_y > 35: # Check if there's space
-                self.draw_text("...", (unit_queue_rect.x + 20, last_item_y + 20), self.font_s)
-
-        # Draw main action buttons
-        end_day_rect = ui_manager.buttons['end_day']
-        pygame.draw.rect(self.screen, C_GREEN, end_day_rect, border_radius=5)
-        self.draw_text("Ready (End Day)", (end_day_rect.x + 30, end_day_rect.y + 15), self.font_m)
-
-
     def draw_scroll_button(self, rect, text, is_enabled):
         """Draws a single scroll arrow button."""
         color = C_BLUE if is_enabled else C_DARK_GRAY
@@ -258,9 +140,10 @@ class Renderer:
             return
             
         # Don't draw menu if an action is already queued for this tile
-        pos = ui_manager.context_menu['position']
-        if any(hasattr(a, 'position') and a.position == pos for a in city.build_queue):
-            return
+        # This logic is now handled inside UIManager._get_context_menu_options_data
+        # pos = ui_manager.context_menu['position']
+        # if any(hasattr(a, 'position') and a.position == pos for a in city.build_queue):
+        #     return
             
         for option in ui_manager.context_menu['options']:
             color = C_BLUE if option['is_enabled'] else C_GRAY

@@ -2,11 +2,8 @@ from typing import Optional
 import pygame
 from nightfall.client.enums import ActiveView
 from nightfall.client.ui_manager import UIManager
-from nightfall.core.state.game_state import GameState
 from nightfall.core.common.datatypes import Position
-from nightfall.core.actions.city_actions import (
-    BuildBuildingAction, UpgradeBuildingAction, DemolishAction
-)
+from nightfall.core.state.game_state import GameState
 
 class InputHandler:
     """
@@ -14,17 +11,11 @@ class InputHandler:
     it into game-specific commands or actions.
     """
     def __init__(self, player_id: str, city_id: str, ui_manager: UIManager):
-        """
-        Initializes the InputHandler.
-        
-        Args:
-            player_id: The ID of the player this client is controlling.
-            city_id: The ID of the city this client is viewing.
-            ui_manager: The UI manager to interact with for context menus and buttons.
-        """
+        # These are now less important here as components can get them from UIManager
         self.player_id = player_id
         self.city_id = city_id
         self.ui_manager = ui_manager
+
         # For double-click detection
         self.last_click_time = 0
         self.last_click_pos = None
@@ -44,25 +35,23 @@ class InputHandler:
         # Make the current predicted state available for all input handler methods via the UI manager
         self.ui_manager.game_state_for_input = predicted_state
 
-        # Handle splitter drag separately as it can override other inputs
-        self._handle_splitter_drag(events, action_queue)
-        self._handle_queue_splitter_drag(events, action_queue)
-
         for event in events:
+            # --- Component-Based Event Handling ---
+            # Iterate in reverse so top-most components get events first.
+            for component in reversed(self.ui_manager.components):
+                action = component.handle_event(event, game_state=predicted_state, action_queue=action_queue)
+                if action:
+                    return action # The component handled the event and produced an action.
+
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1: # Left click
                     return self._handle_mouse_down(event.pos, predicted_state, action_queue)
             elif event.type == pygame.MOUSEBUTTONUP:
-                # Always release splitter drags on mouse up
-                if self.ui_manager.is_dragging_splitter:
-                    self.ui_manager.is_dragging_splitter = False
-                if self.ui_manager.is_dragging_queue_splitter:
-                    self.ui_manager.is_dragging_queue_splitter = False
-
                 if event.button == 1: # Left click
                     return self._handle_mouse_up(event.pos, predicted_state, action_queue)
             elif event.type == pygame.MOUSEMOTION:
-                self._handle_mouse_motion(event.pos, event.buttons)
+                self._handle_mouse_motion(event.pos, event.buttons, action_queue)
+
         return None
 
     def _is_in_main_view(self, mouse_pos):
@@ -86,15 +75,12 @@ class InputHandler:
 
     def _handle_mouse_down(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list):
         """Handles the moment the left mouse button is pressed."""
-        # Check if the splitter was clicked
-        if self.ui_manager.splitter_rect.collidepoint(mouse_pos):
-            self.ui_manager.is_dragging_splitter = True
-            return None # Don't process other clicks if we're starting a splitter drag
-        
-        # Check if the queue splitter was clicked
-        if self.ui_manager.queue_splitter_rect.collidepoint(mouse_pos):
-            self.ui_manager.is_dragging_queue_splitter = True
-            return None
+        # The logic for splitter drags is now handled by the SidePanelComponent.
+        # We only need to handle non-component logic here, like map dragging.
+
+        # Check if the click is on a non-component UI element first
+        if not self._is_in_main_view(mouse_pos):
+            return None # Click was on the panel, which is handled by components
 
         # Check for clicks on UI elements like the 'X' button in the queue.
         # This needs to happen on MOUSEBUTTONDOWN because the UI might be re-rendered
@@ -114,7 +100,7 @@ class InputHandler:
 
     def _handle_mouse_up(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
         """Handles the moment the left mouse button is released."""
-        # If we were dragging a splitter, the action is over.
+        # Splitter drag release is handled by the component.
         if self.ui_manager.is_dragging_splitter:
             return None
 
@@ -128,20 +114,17 @@ class InputHandler:
             return self._handle_mouse_click(mouse_pos, state, action_queue)
         return None
 
-    def _handle_mouse_motion(self, mouse_pos: tuple[int, int], buttons: tuple):
+    def _handle_mouse_motion(self, mouse_pos: tuple[int, int], buttons: tuple, action_queue: list):
         """Handles mouse movement, specifically for dragging the map."""
+        from nightfall.core.common.datatypes import Position
         # If we are dragging a splitter, don't also drag the map
-        if self.ui_manager.is_dragging_splitter:
+        if self.ui_manager.is_dragging_splitter or self.ui_manager.is_dragging_queue_splitter:
+            # This is now handled by the SidePanelComponent's event handler
             return
 
         # --- Handle Hover Effects ---
-        # Reset hover state
-        self.ui_manager.hovered_remove_button_index = None
-        # Check if hovering over any build queue remove buttons
-        for i, rect in enumerate(self.ui_manager.queue_item_remove_button_rects):
-            if rect.collidepoint(mouse_pos):
-                self.ui_manager.hovered_remove_button_index = i
-
+        # This is now handled by the BuildQueueComponent
+        
         # A drag only starts if the mouse moves while the button is down,
         # and a drag start position has been recorded.
         if self.ui_manager.drag_start_pos and buttons[0]:
@@ -173,91 +156,24 @@ class InputHandler:
                     clamped_x = max(0, min(new_x, max_x))
                     clamped_y = max(0, min(new_y, max_y))
                     self.ui_manager.city_camera_offset = Position(clamped_x, clamped_y)
-    
-    def _handle_splitter_drag(self, events: list, action_queue: list):
-        """Handles events related to dragging the UI splitter."""
-        for event in events:
-            if event.type == pygame.MOUSEMOTION and self.ui_manager.is_dragging_splitter:
-                new_panel_width = self.ui_manager.screen_width - event.pos[0]
-                self.ui_manager.update_side_panel_width(new_panel_width, action_queue)
-            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                if self.ui_manager.is_dragging_splitter:
-                    self.ui_manager.is_dragging_splitter = False
-
-    def _handle_queue_splitter_drag(self, events: list, action_queue: list):
-        """Handles events for dragging the splitter between queue panels."""
-        for event in events:
-            if event.type == pygame.MOUSEMOTION and self.ui_manager.is_dragging_queue_splitter:
-                # Calculate the new split ratio
-                total_y_start = self.ui_manager.resource_panel_rect.bottom + 10 # This is a bit of a magic number, but it's consistent
-                total_y_end = self.ui_manager.buttons['end_day'].top - 10
-                total_height = total_y_end - total_y_start
-                if total_height <= 0: return
-
-                splitter_pos_relative = event.pos[1] - total_y_start
-                
-                # --- Calculate the maximum allowed height for the build queue panel ---
-                # This is the height required to show all items *without* scrolling.
-                # This prevents the user from dragging it to a size that causes the "pop" and overlap.
-                queue_header_height = 40
-                item_height = 30
-                build_queue_len = len(action_queue)
-                max_content_height = queue_header_height + (build_queue_len * item_height)
-
-                # The splitter position should not go beyond this calculated max height.
-                clamped_splitter_pos = min(splitter_pos_relative, max_content_height)
-
-                new_ratio = clamped_splitter_pos / total_height
-                self.ui_manager.queue_split_ratio = max(0.05, min(0.95, new_ratio)) # Clamp between 5% and 95% of total space
-                self.ui_manager.update_queue_layouts(action_queue)
-            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                if self.ui_manager.is_dragging_queue_splitter:
-                    self.ui_manager.is_dragging_queue_splitter = False
 
     def _check_ui_element_clicks(self, mouse_pos: tuple[int, int]) -> Optional[dict]:
         """
         Checks for clicks on discrete UI elements that should respond instantly.
         This is separate from _handle_mouse_click to be called on MOUSEBUTTONDOWN.
         """
-        # Check build queue remove buttons
-        # The remove button rects are for *visible* items. We need to map back to the absolute index.
-        for i, rect in enumerate(self.ui_manager.queue_item_remove_button_rects):
-             if rect.collidepoint(mouse_pos):
-                 # 'i' is the index in the visible list. We need the absolute index in the full action_queue.
-                 absolute_index = self.ui_manager.build_queue_scroll_offset + i
-                 return {"type": "remove_action", "index": absolute_index}
-
-        # Check unit queue remove buttons (if they existed)
-        # for i, rect in enumerate(self.ui_manager.unit_queue_remove_button_rects):
-        #    ...
+        # This logic is now handled by the BuildQueueComponent's event handler.
+        # This function can be removed if no other elements use it.
 
         return None
 
 
     def _handle_mouse_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
         """Handles a single, discrete mouse click (not a drag)."""
+        from nightfall.core.common.datatypes import Position
         # 1. Check global buttons first (End Day, Exit)
-        for name, rect in self.ui_manager.buttons.items():
-            if rect.collidepoint(mouse_pos):
-                if name == "end_day":
-                    return {"type": "end_day"}
-                elif name == "build_queue_scroll_up":
-                    if self.ui_manager.build_queue_scroll_offset > 0:
-                        self.ui_manager.build_queue_scroll_offset -= 1
-                    return None
-                elif name == "build_queue_scroll_down":
-                    self.ui_manager.build_queue_scroll_offset += 1 # UIManager will clamp it
-                    return None
-                elif name == "unit_queue_scroll_up":
-                    if self.ui_manager.unit_queue_scroll_offset > 0:
-                        self.ui_manager.unit_queue_scroll_offset -= 1
-                    return None
-                elif name == "unit_queue_scroll_down":
-                    self.ui_manager.unit_queue_scroll_offset += 1 # UIManager will clamp it
-                    return None
-                elif name == "exit_session":
-                    return {"type": "exit_session"}
-
+        # This logic is now handled by components.
+        
         # 2. Check top bar view-switching buttons
         for name, rect in self.ui_manager.top_bar_buttons.items():
             if rect.collidepoint(mouse_pos):
@@ -329,6 +245,9 @@ class InputHandler:
 
     def _handle_context_menu_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
         """Handles a click within an active context menu."""
+        from nightfall.core.actions.city_actions import (
+            BuildBuildingAction, UpgradeBuildingAction, DemolishAction
+        )
         selected_pos = self.ui_manager.context_menu['position']
         
         for option in self.ui_manager.context_menu['options']:

@@ -1,9 +1,10 @@
 from typing import Optional
 from nightfall.core.common.datatypes import Position
 from nightfall.client.enums import ActiveView
+from nightfall.client.ui.components.panel_component import SidePanelComponent
+
 from nightfall.core.common.enums import BuildingType, CityTerrainType
 from nightfall.core.common.game_data import BUILDING_DATA, DEMOLISH_COST_BUILDING, DEMOLISH_COST_RESOURCE
-from nightfall.core.actions.city_actions import BuildBuildingAction, UpgradeBuildingAction, DemolishAction
 from nightfall.core.state.game_state import GameState
 import pygame
 
@@ -17,6 +18,10 @@ MAX_SIDE_PANEL_WIDTH_RATIO = 0.6 # 60% of screen width
 SPLITTER_WIDTH = 8
 
 class UIManager:
+    """
+    Manages the overall UI state, layout, and coordination between components.
+    It holds the state that multiple components might need to reference.
+    """
     def __init__(self):
         self.selected_city_tile: Optional[Position] = None
         self.context_menu: Optional[dict] = None
@@ -26,7 +31,7 @@ class UIManager:
         self.viewed_city_id: Optional[str] = None
         self.font_s = pygame.font.Font(None, 24)
         self.orders_sent = False
-        self.is_ready = False
+        self.font_m = pygame.font.Font(None, 32)
         self.game_state_for_input: Optional[GameState] = None # Hack for input handler
 
         # Camera and dragging state for map views
@@ -65,6 +70,11 @@ class UIManager:
         self.unit_queue_scroll_offset = 0
         self.build_queue_visible_items = 0
         self.unit_queue_visible_items = 0
+
+        # --- Component-Based UI ---
+        self.components = []
+        self.side_panel_component = SidePanelComponent(self)
+        self.components.append(self.side_panel_component)
 
 
         # Lobby UI State
