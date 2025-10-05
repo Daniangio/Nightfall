@@ -96,6 +96,13 @@ class InputHandler:
             self.ui_manager.is_dragging_queue_splitter = True
             return None
 
+        # Check for clicks on UI elements like the 'X' button in the queue.
+        # This needs to happen on MOUSEBUTTONDOWN because the UI might be re-rendered
+        # before MOUSEBUTTONUP, causing a mismatch in rect positions.
+        action = self._check_ui_element_clicks(mouse_pos)
+        if action:
+            return action
+
         # If the click is in the main view area, prepare for a potential drag.
         # We don't set is_dragging to True yet, that happens on mouse motion.
         if self._is_in_main_view(mouse_pos):
@@ -207,6 +214,26 @@ class InputHandler:
                 if self.ui_manager.is_dragging_queue_splitter:
                     self.ui_manager.is_dragging_queue_splitter = False
 
+    def _check_ui_element_clicks(self, mouse_pos: tuple[int, int]) -> Optional[dict]:
+        """
+        Checks for clicks on discrete UI elements that should respond instantly.
+        This is separate from _handle_mouse_click to be called on MOUSEBUTTONDOWN.
+        """
+        # Check build queue remove buttons
+        # The remove button rects are for *visible* items. We need to map back to the absolute index.
+        for i, rect in enumerate(self.ui_manager.queue_item_remove_button_rects):
+             if rect.collidepoint(mouse_pos):
+                 # 'i' is the index in the visible list. We need the absolute index in the full action_queue.
+                 absolute_index = self.ui_manager.build_queue_scroll_offset + i
+                 return {"type": "remove_action", "index": absolute_index}
+
+        # Check unit queue remove buttons (if they existed)
+        # for i, rect in enumerate(self.ui_manager.unit_queue_remove_button_rects):
+        #    ...
+
+        return None
+
+
     def _handle_mouse_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
         """Handles a single, discrete mouse click (not a drag)."""
         # 1. Check global buttons first (End Day, Exit)
@@ -283,13 +310,6 @@ class InputHandler:
         # Check for clicks on various UI elements within the city view
         if self.ui_manager.context_menu and self.ui_manager.context_menu['rect'].collidepoint(mouse_pos):
             return self._handle_context_menu_click(mouse_pos, state, action_queue)
-
-        # The remove button rects are now for *visible* items. We need to map back to the absolute index.
-        for i, rect in enumerate(self.ui_manager.queue_item_remove_button_rects):
-             if rect.collidepoint(mouse_pos):
-                 # 'i' is the index in the visible list. We need the absolute index in the full action_queue.
-                 absolute_index = self.ui_manager.build_queue_scroll_offset + i
-                 return {"type": "remove_action", "index": absolute_index}
 
         # Note: We don't have remove buttons for the unit queue yet, so no input handling is needed there.
 
