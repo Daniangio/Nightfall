@@ -82,7 +82,8 @@ class Renderer:
         for y in range(game_map.height):
             for x in range(game_map.width):
                 tile = game_map.get_tile(x, y)
-                if tile:
+                # EmptyTile has terrain=None, so this check implicitly skips it.
+                if tile and tile.terrain:
                     color = WORLD_TERRAIN_COLORS.get(tile.terrain.name, C_WHITE)
                     screen_x = x * WORLD_TILE_SIZE - ui_manager.camera_offset.x + ui_manager.main_view_rect.x
                     screen_y = y * WORLD_TILE_SIZE - ui_manager.camera_offset.y + ui_manager.main_view_rect.y
@@ -106,7 +107,8 @@ class Renderer:
         for y in range(city_map.height):
             for x in range(city_map.width):
                 tile = city_map.get_tile(x,y)
-                if tile:
+                # EmptyTile has terrain=None, so this check implicitly skips it.
+                if tile and tile.terrain:
                     color = CITY_TERRAIN_COLORS.get(tile.terrain.name, C_WHITE)
                     rect = ui_manager.get_city_tile_rect(x, y)
                     self.screen.fill(color, rect)

@@ -16,6 +16,7 @@ class BuildingType(Enum):
 
 class TerrainType(Enum):
     """Enumeration for world map tile terrain types."""
+    EMPTY = auto()
     PLAINS = auto()
     FOREST = auto()
     MOUNTAIN = auto()
@@ -23,6 +24,7 @@ class TerrainType(Enum):
 
 class CityTerrainType(Enum):
     """Enumeration for city plot terrain types."""
+    EMPTY = auto()
     GRASS = auto()
     FOREST_PLOT = auto()
     IRON_DEPOSIT = auto()

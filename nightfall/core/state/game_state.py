@@ -69,6 +69,11 @@ class GameState:
         game_state = cls.from_dict(data)
         print(f"Loaded game state from {filepath} at turn {game_state.turn}")
 
+        # Overwrite the world map from the text file
+        # This ensures the map defined in map.txt is always used for new games.
+        world_map_path = 'nightfall/server/data/map.txt'
+        game_state.game_map = GameMap.load_from_file(world_map_path)
+
         # Overwrite the city layout from the text file
         city_layout_path = 'nightfall/server/data/city_layout.txt'
         if 'city1' in game_state.cities:

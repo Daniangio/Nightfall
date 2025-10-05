@@ -27,6 +27,12 @@ class BuildQueueComponent(BaseComponent):
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             # Handle scroll button clicks
+            # Handle remove item clicks
+            for i, rect in enumerate(self.ui_manager.queue_item_remove_button_rects):
+                if rect.collidepoint(event.pos):
+                    absolute_index = self.ui_manager.build_queue_scroll_offset + i
+                    return {"type": "remove_action", "index": absolute_index}
+            
             if self.ui_manager.buttons['build_queue_scroll_up'].collidepoint(event.pos):
                 if self.ui_manager.build_queue_scroll_offset > 0:
                     self.ui_manager.build_queue_scroll_offset -= 1
@@ -36,11 +42,6 @@ class BuildQueueComponent(BaseComponent):
                 self.ui_manager.build_queue_scroll_offset += 1 # UIManager will clamp it
                 return None
 
-            # Handle remove item clicks
-            for i, rect in enumerate(self.ui_manager.queue_item_remove_button_rects):
-                if rect.collidepoint(event.pos):
-                    absolute_index = self.ui_manager.build_queue_scroll_offset + i
-                    return {"type": "remove_action", "index": absolute_index}
 
         return None
 

@@ -82,13 +82,6 @@ class InputHandler:
         if not self._is_in_main_view(mouse_pos):
             return None # Click was on the panel, which is handled by components
 
-        # Check for clicks on UI elements like the 'X' button in the queue.
-        # This needs to happen on MOUSEBUTTONDOWN because the UI might be re-rendered
-        # before MOUSEBUTTONUP, causing a mismatch in rect positions.
-        action = self._check_ui_element_clicks(mouse_pos)
-        if action:
-            return action
-
         # If the click is in the main view area, prepare for a potential drag.
         # We don't set is_dragging to True yet, that happens on mouse motion.
         if self._is_in_main_view(mouse_pos):
@@ -156,17 +149,6 @@ class InputHandler:
                     clamped_x = max(0, min(new_x, max_x))
                     clamped_y = max(0, min(new_y, max_y))
                     self.ui_manager.city_camera_offset = Position(clamped_x, clamped_y)
-
-    def _check_ui_element_clicks(self, mouse_pos: tuple[int, int]) -> Optional[dict]:
-        """
-        Checks for clicks on discrete UI elements that should respond instantly.
-        This is separate from _handle_mouse_click to be called on MOUSEBUTTONDOWN.
-        """
-        # This logic is now handled by the BuildQueueComponent's event handler.
-        # This function can be removed if no other elements use it.
-
-        return None
-
 
     def _handle_mouse_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
         """Handles a single, discrete mouse click (not a drag)."""

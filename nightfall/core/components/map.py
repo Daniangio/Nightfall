@@ -22,6 +22,7 @@ class Tile:
 class GameMap:
     """Represents the game world grid."""
     TERRAIN_MAPPING = {
+        ' ': TerrainType.EMPTY,
         'P': TerrainType.PLAINS,
         'F': TerrainType.FOREST,
         'M': TerrainType.MOUNTAIN,
@@ -40,19 +41,19 @@ class GameMap:
 
     @classmethod
     def load_from_file(cls, filepath: str):
-        """Loads a map layout from a text file."""
+        """Loads a map layout from a text file, allowing for blank spaces."""
         with open(filepath, 'r') as f:
-            lines = [line.strip() for line in f.readlines()]
+            # rstrip to remove newline but keep other whitespace
+            lines = [line.rstrip('\n') for line in f.readlines()]
         
         height = len(lines)
-        width = len(lines[0]) if height > 0 else 0
+        width = max(len(line) for line in lines) if height > 0 else 0
         
         game_map = cls(width, height)
         for y, line in enumerate(lines):
             for x, char in enumerate(line):
-                terrain = cls.TERRAIN_MAPPING.get(char, TerrainType.PLAINS)
+                terrain = cls.TERRAIN_MAPPING.get(char, TerrainType.EMPTY)
                 game_map.tiles[y][x] = Tile(terrain, Position(x, y))
-        
         print(f"Loaded map of size {width}x{height} from {filepath}")
         return game_map
 
@@ -60,11 +61,11 @@ class GameMap:
         return {
             'width': self.width,
             'height': self.height,
-            'tiles': [[tile.to_dict() for tile in row] for row in self.tiles]
+            'tiles': [[tile.to_dict() if tile else {} for tile in row] for row in self.tiles]
         }
 
     @classmethod
     def from_dict(cls, data):
         game_map = cls(data['width'], data['height'])
-        game_map.tiles = [[Tile.from_dict(tile_data) for tile_data in row] for row in data['tiles']]
+        game_map.tiles = [[Tile.from_dict(tile_data) for tile_data in row] for row in data.get('tiles', [])]
         return game_map

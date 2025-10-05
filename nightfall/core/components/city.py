@@ -65,12 +65,9 @@ class CityMap:
         self.height = height
         # First, create the grid with default grass tiles
         self.tiles: List[List[CityTile]] = [
-            [CityTile(terrain=CityTerrainType.GRASS, position=Position(x, y)) for y in range(height)]
+            [CityTile(terrain=CityTerrainType.EMPTY, position=Position(x, y)) for y in range(height)]
             for x in range(width)
         ]
-        # Then, place the Citadel on the newly created central tile
-        citadel_pos = Position(width // 2, height // 2)
-        self.get_tile(citadel_pos.x, citadel_pos.y).building = Building(BuildingType.CITADEL, 1)
 
     def get_tile(self, x: int, y: int) -> Optional[CityTile]:
         if 0 <= x < self.width and 0 <= y < self.height:
@@ -84,20 +81,23 @@ class CityMap:
 
     @classmethod
     def load_from_file(cls, filepath: str) -> CityMap:
-        """Loads a city map layout from a text file."""
+        """Loads a city map layout from a text file, allowing for blank spaces."""
         with open(filepath, 'r') as f:
-            lines = [line.strip() for line in f.readlines()]
+            lines = [line.rstrip('\n') for line in f.readlines()]
         
         height = len(lines)
-        width = len(lines[0]) if height > 0 else 0
+        width = max(len(line) for line in lines) if height > 0 else 0
         
-        # Create a new map, which will have a Citadel by default.
+        # Create a new map instance.
         city_map = cls(width, height)
         for y, line in enumerate(lines):
             for x, char in enumerate(line):
-                terrain = cls.TERRAIN_MAPPING.get(char, CityTerrainType.GRASS)
+                terrain = cls.TERRAIN_MAPPING.get(char, CityTerrainType.EMPTY)
                 city_map.get_tile(x, y).terrain = terrain # Update terrain of the existing tile
         
+        # After loading the terrain, explicitly place the Citadel.
+        citadel_pos = Position(width // 2, height // 2)
+        city_map.get_tile(citadel_pos.x, citadel_pos.y).building = Building(BuildingType.CITADEL, 1)
         print(f"Loaded city map of size {width}x{height} from {filepath}")
         return city_map
     
@@ -105,13 +105,13 @@ class CityMap:
         return {
             'width': self.width,
             'height': self.height,
-            'tiles': [[tile.to_dict() for tile in row] for row in self.tiles]
+            'tiles': [[tile.to_dict() if tile else None for tile in row] for row in self.tiles]
         }
     
     @classmethod
     def from_dict(cls, data):
         city_map = cls(data['width'], data['height'])
-        city_map.tiles = [[CityTile.from_dict(t_data) for t_data in col] for col in data['tiles']]
+        city_map.tiles = [[CityTile.from_dict(t_data) for t_data in col] for col in data.get('tiles', [])]
         return city_map
 
 
