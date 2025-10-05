@@ -1,0 +1,18 @@
+{
+  "layout": [
+    "GGGGGGGGG",
+    "GFFGGIGGG",
+    "GFFGGIGGG",
+    "GGGGGGGGG",
+    "GGGGGGGGG",
+    "GGGGGGGGG",
+    "GWWGGGGGG",
+    "GWWGGGGGG",
+    "GGGGGGGGG"
+  ],
+  "initial_buildings": [
+    {
+      "position": {"x": 4, "y": 4}, "type": "CITADEL", "level": 1
+    }
+  ]
+}

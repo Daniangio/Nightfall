@@ -11,7 +11,7 @@ from nightfall.config import PROJECT_ROOT
 
 # --- Server Configuration ---
 HOST, PORT = "localhost", 9999
-INITIAL_STATE_FILE = PROJECT_ROOT / "nightfall/server/data/initial_state.json"
+WORLD_FILE = PROJECT_ROOT / "nightfall/server/data/world.json"
 
 class GameSession:
     """Manages the state and logic for a single game session."""
@@ -105,7 +105,7 @@ class MasterServer:
             session_id = str(uuid.uuid4())[:8] # Create a unique session ID
             
             # Create a fresh GameState for the new session
-            initial_state = GameState.load_from_file(INITIAL_STATE_FILE)
+            initial_state = GameState.from_world_file(WORLD_FILE)
             
             session = GameSession(session_id, initial_state)
             self.sessions[session_id] = session

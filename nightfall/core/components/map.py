@@ -40,21 +40,20 @@ class GameMap:
         return None
 
     @classmethod
-    def load_from_file(cls, filepath: str):
-        """Loads a map layout from a text file, allowing for blank spaces."""
-        with open(filepath, 'r') as f:
-            # rstrip to remove newline but keep other whitespace
-            lines = [line.rstrip('\n') for line in f.readlines()]
+    def load_from_data(cls, layout_data: list[str]):
+        """Loads a map layout from a list of strings."""
+        lines = layout_data
         
         height = len(lines)
         width = max(len(line) for line in lines) if height > 0 else 0
         
         game_map = cls(width, height)
         for y, line in enumerate(lines):
+            line = line.ljust(width, ' ') # Pad line to ensure consistent width
             for x, char in enumerate(line):
                 terrain = cls.TERRAIN_MAPPING.get(char, TerrainType.EMPTY)
                 game_map.tiles[y][x] = Tile(terrain, Position(x, y))
-        print(f"Loaded map of size {width}x{height} from {filepath}")
+        print(f"Loaded map of size {width}x{height}")
         return game_map
 
     def to_dict(self):

@@ -80,24 +80,31 @@ class CityMap:
         return new_map
 
     @classmethod
-    def load_from_file(cls, filepath: str) -> CityMap:
-        """Loads a city map layout from a text file, allowing for blank spaces."""
+    def load_from_file(cls, filepath: str) -> 'CityMap':
+        """Loads a city map layout from a JSON file."""
+        import json
         with open(filepath, 'r') as f:
-            lines = [line.rstrip('\n') for line in f.readlines()]
+            data = json.load(f)
+
+        layout_lines = data['layout']
+        initial_buildings = data.get('initial_buildings', [])
         
-        height = len(lines)
-        width = max(len(line) for line in lines) if height > 0 else 0
+        height = len(layout_lines)
+        width = max(len(line) for line in layout_lines) if height > 0 else 0
         
-        # Create a new map instance.
         city_map = cls(width, height)
-        for y, line in enumerate(lines):
+        for y, line in enumerate(layout_lines):
             for x, char in enumerate(line):
                 terrain = cls.TERRAIN_MAPPING.get(char, CityTerrainType.EMPTY)
-                city_map.get_tile(x, y).terrain = terrain # Update terrain of the existing tile
+                city_map.get_tile(x, y).terrain = terrain
         
-        # After loading the terrain, explicitly place the Citadel.
-        citadel_pos = Position(width // 2, height // 2)
-        city_map.get_tile(citadel_pos.x, citadel_pos.y).building = Building(BuildingType.CITADEL, 1)
+        # Place initial buildings
+        for building_data in initial_buildings:
+            pos = Position(**building_data['position'])
+            b_type = BuildingType[building_data['type']]
+            level = building_data.get('level', 1)
+            city_map.get_tile(pos.x, pos.y).building = Building(b_type, level)
+
         print(f"Loaded city map of size {width}x{height} from {filepath}")
         return city_map
     
@@ -132,10 +139,6 @@ class City:
     recruitment_queue: List[RecruitmentProgress] = field(default_factory=list)
     garrison: dict = field(default_factory=dict)
 
-    def __post_init__(self):
-        """Called after the dataclass is initialized."""
-        # Ensure stats are calculated and AP is full on creation.
-        self.update_stats_from_citadel()
 
     def update_stats_from_citadel(self):
         """Recalculates city-wide stats based on the Citadel's level."""
@@ -147,7 +150,10 @@ class City:
                     num_buildings += 1
                     if tile.building.type == BuildingType.CITADEL:
                         citadel = tile.building
-        assert citadel
+        if not citadel:
+            print(f"Warning: City '{self.name}' has no Citadel. Stats will be zero.")
+            return
+
         self.num_buildings = num_buildings
 
         citadel_stats = BUILDING_DATA[BuildingType.CITADEL]['provides'].get(citadel.level, {})
@@ -206,4 +212,6 @@ class City:
             garrison={UnitType[unit_name]: count for unit_name, count in data.get('garrison', {}).items()}
         )
         
+        # Ensure stats are calculated and AP is full on creation.
+        city.update_stats_from_citadel()
         return city

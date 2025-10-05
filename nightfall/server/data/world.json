@@ -1,0 +1,29 @@
+{
+  "world_map": {
+    "layout": [
+      "PFFL    ",
+      "PMPL    ",
+      "PPPP    ",
+      "  L     ",
+      "  L PPPF",
+      "    PMMF"
+    ],
+    "places": [
+      {
+        "type": "CITY",
+        "id": "city1",
+        "name": "Storm's Landing",
+        "owner_id": "player1",
+        "position": {"x": 1, "y": 1},
+        "city_map_path": "nightfall/server/data/city_layouts/default_city.json",
+        "initial_resources": {"food": 1000, "wood": 1000, "iron": 1000}
+      }
+    ]
+  },
+  "players": [
+    {
+      "id": "player1",
+      "name": "Player One"
+    }
+  ]
+}

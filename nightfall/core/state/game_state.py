@@ -3,6 +3,7 @@ import copy
 from typing import Dict, Type
 from nightfall.core.components.map import GameMap
 from nightfall.core.components.player import Player
+from nightfall.core.common.datatypes import Position, Resources
 from nightfall.core.components.city import City, CityMap
 from nightfall.core.actions.action import Action
 from nightfall.core.actions.city_actions import BuildBuildingAction, UpgradeBuildingAction, DemolishAction
@@ -35,37 +36,42 @@ class GameState:
 
     @classmethod
     def from_dict(cls, data: dict) -> 'GameState':
-        """Deserializes a game state from a dictionary."""
+        """Deserializes a game state from a dictionary (e.g., from a save file or network)."""
+        game_map = GameMap.from_dict(data['game_map'])
+        cities = {c_id: City.from_dict(c_data, cls.ACTION_CLASS_MAP) for c_id, c_data in data['cities'].items()}
+        players = {p_id: Player.from_dict(p_data, cls.ACTION_CLASS_MAP) for p_id, p_data in data.get('players', {}).items()}
+        return cls(game_map, players, cities, data.get('turn', 0))
 
-        if 'game_map' in data:
-            game_map = GameMap.from_dict(data['game_map'])
-        else:
-            world_map_path = 'nightfall/server/data/map.txt'
-            game_map = GameMap.load_from_file(world_map_path)
+    @classmethod
+    def from_world_file(cls, filepath: str) -> 'GameState':
+        """Creates a new game state from a world definition file."""
+        with open(filepath, 'r') as f:
+            world_data = json.load(f)
 
-        if 'cities' in data:
-            cities = {c_id: City.from_dict(c_data, cls.ACTION_CLASS_MAP) for c_id, c_data in data['cities'].items()}
-        else:
-            city_layout_path = 'nightfall/server/data/city_layout.txt'
-            city_data = {
-                'id': 'city1',
-                'name': 'City 1',
-                'owner_id': 'player1',
-                'position': {'x': 0, 'y': 0},
-                'city_map': CityMap.load_from_file(city_layout_path).to_dict(),
-                'resources': {'food': 1000, 'wood': 1000, 'iron': 1000},
-                'build_queue': [],
-                'recruitment_queue': [],
-                'action_points': 0,
-                'garrison': {},
-            }
-            cities = {
-                'city1': City.from_dict(city_data, cls.ACTION_CLASS_MAP)
-            }
+        # 1. Load World Map
+        game_map = GameMap.load_from_data(world_data['world_map']['layout'])
 
-        players = {p_id: Player.from_dict(p_data, cls.ACTION_CLASS_MAP) for p_id, p_data in data['players'].items()}
-        
-        return cls(game_map, players, cities, data['turn'])
+        # 2. Load Players
+        players = {}
+        player_city_map = {} # Helper to assign cities to players
+        for p_data in world_data['players']:
+            players[p_data['id']] = Player(name=p_data['name'], city_ids=[])
+            player_city_map[p_data['id']] = []
+
+        # 3. Load Cities (Places)
+        cities = {}
+        for place_data in world_data['world_map']['places']:
+            if place_data['type'] == 'CITY':
+                city_map_path = place_data.get('city_map_path', 'nightfall/server/data/city_layouts/default_city.json')
+                city = City(id=place_data['id'], name=place_data['name'], owner_id=place_data['owner_id'],
+                            position=Position(**place_data['position']), city_map=CityMap.load_from_file(city_map_path),
+                            resources=Resources(**place_data.get('initial_resources', {})))
+                city.update_stats_from_citadel() # Calculate initial stats
+                cities[city.id] = city
+                if city.owner_id in player_city_map:
+                    players[city.owner_id].city_ids.append(city.id)
+
+        return cls(game_map, players, cities, turn=1)
 
     def to_json_string(self) -> str:
         """Serializes the game state to a JSON string for network transport."""
@@ -86,13 +92,13 @@ class GameState:
     @classmethod
     def load_from_file(cls, filepath: str) -> 'GameState':
         """
-        Loads a game state from a JSON file.
+        Loads a game state from a JSON save file.
         """
         with open(filepath, 'r') as f:
             data = json.load(f)
         
         game_state = cls.from_dict(data)
-        print(f"Loaded game state from {filepath} at turn {game_state.turn}")
+        print(f"Loaded saved game state from {filepath} at turn {game_state.turn}")
 
         return game_state
 
