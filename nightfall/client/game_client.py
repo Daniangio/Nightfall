@@ -113,6 +113,11 @@ class GameClient:
             index = action.get("index")
             # Send a specific command to the server to cancel an item in the build queue
             self.network_client.send_message({"command": "cancel_order", "player_id": PLAYER_ID, "payload": {"city_id": CITY_ID, "index": index}})
+        elif action_type == "reorder_action":
+            index = action.get("index")
+            direction = action.get("direction")
+            payload = {"city_id": CITY_ID, "index": index, "direction": direction}
+            self.network_client.send_message({"command": "reorder_order", "player_id": PLAYER_ID, "payload": payload})
         elif action_type == "exit_session":
             self.network_client.send_message({"command": "leave_session", "player_id": PLAYER_ID})
             self._return_to_lobby()

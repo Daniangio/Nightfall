@@ -62,7 +62,11 @@ class UIManager:
         # Action Queue UI State
         self.queue_item_rects = []
         self.queue_item_remove_button_rects = []
+        self.queue_item_up_button_rects = []
+        self.queue_item_down_button_rects = []
         self.hovered_remove_button_index: Optional[int] = None
+        self.hovered_up_button_index: Optional[int] = None
+        self.hovered_down_button_index: Optional[int] = None
         self.predicted_production = None
 
         # --- Scroll State ---
@@ -385,11 +389,23 @@ class UIManager:
         """Gets the rect for the 'X' remove button on a queue item."""
         item_rect = self.get_build_queue_item_rect(item_index)
         return pygame.Rect(item_rect.right - 25, item_rect.y, 20, 25)
+
+    def get_build_queue_item_up_button_rect(self, item_index: int) -> pygame.Rect:
+        """Gets the rect for the 'up' arrow button on a queue item."""
+        remove_rect = self.get_build_queue_item_remove_button_rect(item_index)
+        return pygame.Rect(remove_rect.left - 25, remove_rect.y, 20, 25)
+
+    def get_build_queue_item_down_button_rect(self, item_index: int) -> pygame.Rect:
+        """Gets the rect for the 'down' arrow button on a queue item."""
+        up_rect = self.get_build_queue_item_up_button_rect(item_index)
+        return pygame.Rect(up_rect.left - 25, up_rect.y, 20, 25)
     
     def update_action_queue_ui(self, action_queue: list):
         """Updates the list of rects for the *visible* action queue 'remove' buttons."""
         self.queue_item_rects.clear()
         self.queue_item_remove_button_rects.clear()
+        self.queue_item_up_button_rects.clear()
+        self.queue_item_down_button_rects.clear()
 
         # Clamp scroll offset
         max_scroll = max(0, len(action_queue) - self.build_queue_visible_items)
@@ -403,6 +419,8 @@ class UIManager:
             # Pass the visible index (i) to get the correct screen position
             self.queue_item_rects.append(self.get_build_queue_item_rect(i))
             self.queue_item_remove_button_rects.append(self.get_build_queue_item_remove_button_rect(i))
+            self.queue_item_up_button_rects.append(self.get_build_queue_item_up_button_rect(i))
+            self.queue_item_down_button_rects.append(self.get_build_queue_item_down_button_rect(i))
 
     def update_lobby_buttons(self, sessions: dict):
         """Create and position buttons for the lobby screen."""

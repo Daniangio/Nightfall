@@ -22,12 +22,24 @@ class BuildQueueComponent(BaseComponent):
     def handle_event(self, event: pygame.event.Event, game_state: "GameState", action_queue: list) -> Optional[dict]:
         if event.type == pygame.MOUSEMOTION:
             self.ui_manager.hovered_remove_button_index = None
+            self.ui_manager.hovered_up_button_index = None
+            self.ui_manager.hovered_down_button_index = None
             for i, rect in enumerate(self.ui_manager.queue_item_remove_button_rects):
                 if rect.collidepoint(event.pos):
                     self.ui_manager.hovered_remove_button_index = i
+            for i, rect in enumerate(self.ui_manager.queue_item_up_button_rects):
+                if rect.collidepoint(event.pos):
+                    self.ui_manager.hovered_up_button_index = i
+            for i, rect in enumerate(self.ui_manager.queue_item_down_button_rects):
+                if rect.collidepoint(event.pos):
+                    self.ui_manager.hovered_down_button_index = i
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             # Handle scroll button clicks
+            absolute_index = -1
+            if self.ui_manager.hovered_remove_button_index is not None:
+                absolute_index = self.ui_manager.build_queue_scroll_offset + self.ui_manager.hovered_remove_button_index
+
             # Handle remove item clicks
             for i, rect in enumerate(self.ui_manager.queue_item_remove_button_rects):
                 if rect.collidepoint(event.pos):
@@ -42,6 +54,22 @@ class BuildQueueComponent(BaseComponent):
             if self.ui_manager.buttons['build_queue_scroll_down'].collidepoint(event.pos):
                 self.ui_manager.build_queue_scroll_offset += 1 # UIManager will clamp it
                 return None
+
+            # Handle reorder clicks
+            for i, rect in enumerate(self.ui_manager.queue_item_up_button_rects):
+                if rect.collidepoint(event.pos):
+                    absolute_index = self.ui_manager.build_queue_scroll_offset + i
+                    if absolute_index > 1: # Can't move into first or second spot
+                        return {"type": "reorder_action", "index": absolute_index, "direction": "up"}
+            
+            for i, rect in enumerate(self.ui_manager.queue_item_down_button_rects):
+                if rect.collidepoint(event.pos):
+                    absolute_index = self.ui_manager.build_queue_scroll_offset + i
+                    # Can't move the first item, and can't move last item down
+                    if absolute_index > 0 and absolute_index < len(action_queue) - 1:
+                        return {"type": "reorder_action", "index": absolute_index, "direction": "down"}
+
+
 
 
         return None
@@ -79,14 +107,31 @@ class BuildQueueComponent(BaseComponent):
             # Draw item text and remaining time
             text_str = f"{absolute_index + 1}. {str(action)}"
             screen.blit(self.font_s.render(text_str, True, C_BLACK), (item_rect.x + 5, item_rect.y + 2))
-            screen.blit(self.font_s.render(time_str, True, C_BLACK), (item_rect.right - 145, item_rect.y + 2))
+            screen.blit(self.font_s.render(time_str, True, C_BLACK), (item_rect.right - 170, item_rect.y + 2))
 
+            # --- Draw Action Buttons (Reorder, Remove) ---
+            # Draw Remove Button
             x_rect = ui_manager.get_build_queue_item_remove_button_rect(i)
             if ui_manager.hovered_remove_button_index == i:
                 pygame.draw.rect(screen, (100, 100, 100), x_rect, border_radius=3)
-
             text_surf = self.font_s.render("X", True, C_RED)
             screen.blit(text_surf, text_surf.get_rect(center=x_rect.center))
+
+            # Draw Up Arrow
+            up_rect = ui_manager.get_build_queue_item_up_button_rect(i)
+            can_move_up = absolute_index > 1
+            if ui_manager.hovered_up_button_index == i and can_move_up:
+                pygame.draw.rect(screen, (100, 100, 100), up_rect, border_radius=3)
+            self._draw_scroll_button(screen, up_rect, '^', can_move_up)
+
+            # Draw Down Arrow
+            down_rect = ui_manager.get_build_queue_item_down_button_rect(i)
+            can_move_down = absolute_index > 0 and absolute_index < len(action_queue) - 1
+            if ui_manager.hovered_down_button_index == i and can_move_down:
+                pygame.draw.rect(screen, (100, 100, 100), down_rect, border_radius=3)
+            self._draw_scroll_button(screen, down_rect, 'v', can_move_down)
+
+
 
     def _draw_scroll_button(self, screen, rect, text, is_enabled):
         color = C_BLUE if is_enabled else C_DARK_GRAY

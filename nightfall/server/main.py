@@ -84,6 +84,32 @@ class GameSession:
             self.broadcast_state() # Notify clients of the change
             return {"status": "success", "message": "Action canceled."}
 
+    def handle_reorder_order(self, player_id, payload):
+        with self.lock:
+            city_id = payload.get("city_id")
+            index = payload.get("index")
+            direction = payload.get("direction")
+            city = self.state.cities.get(city_id)
+
+            if not city or city.player_id != player_id:
+                return {"status": "error", "message": "Invalid city or not owner."}
+
+            queue_len = len(city.build_queue)
+            if not (0 <= index < queue_len):
+                return {"status": "error", "message": "Invalid action index."}
+
+            # Apply reordering rules
+            if direction == "up" and index > 1:
+                city.build_queue.insert(index - 1, city.build_queue.pop(index))
+            elif direction == "down" and 0 < index < queue_len - 1:
+                city.build_queue.insert(index + 1, city.build_queue.pop(index))
+            else:
+                return {"status": "error", "message": "Invalid move."}
+
+            print(f"Player '{player_id}' reordered queue. Item at {index} moved {direction}.")
+            self.broadcast_state()
+            return {"status": "success", "message": "Queue reordered."}
+
     def game_loop(self):
         """The main simulation loop for the game session."""
         print(f"[{self.session_id}] Game loop started.")
@@ -218,6 +244,8 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
 
             if command == "set_orders":
                 response_data = self.session.handle_set_orders(player_id, payload)
+            elif command == "reorder_order":
+                response_data = self.session.handle_reorder_order(player_id, payload)
             elif command == "cancel_order":
                 response_data = self.session.handle_cancel_order(player_id, payload)
             elif command == "leave_session":
