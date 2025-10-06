@@ -35,11 +35,11 @@ class ResourcePanelComponent(BaseComponent):
             surface = font.render(text, True, color)
             screen.blit(surface, pos)
 
-        draw_text(f"Food: {int(res.food)} (+{production.food if production else 0})", (resource_rect.x + 20, res_y))
+        draw_text(f"Food: {int(res.food)} / {int(city.max_resources.food)} (+{production.food if production else 0})", (resource_rect.x + 20, res_y))
         res_y += 25
-        draw_text(f"Wood: {int(res.wood)} (+{production.wood if production else 0})", (resource_rect.x + 20, res_y))
+        draw_text(f"Wood: {int(res.wood)} / {int(city.max_resources.wood)} (+{production.wood if production else 0})", (resource_rect.x + 20, res_y))
         res_y += 25
-        draw_text(f"Iron: {int(res.iron)} (+{production.iron if production else 0})", (resource_rect.x + 20, res_y))
+        draw_text(f"Iron: {int(res.iron)} / {int(city.max_resources.iron)} (+{production.iron if production else 0})", (resource_rect.x + 20, res_y))
         res_y += 25
         draw_text(f"Buildings: {city.num_buildings} / {city.max_buildings}", (resource_rect.x + 20, res_y))
 

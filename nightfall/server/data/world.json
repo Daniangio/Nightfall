@@ -16,7 +16,7 @@
         "player_id": "player1",
         "position": {"x": 1, "y": 1},
         "city_map_path": "nightfall/server/data/city_layouts/default_city.json",
-        "initial_resources": {"food": 1000, "wood": 1000, "iron": 1000}
+        "initial_resources": {"food": 2000, "wood": 2000, "iron": 2000}
       }
     ]
   },

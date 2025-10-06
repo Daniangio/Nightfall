@@ -10,9 +10,9 @@ BUILDING_DATA = {
             3: Resources(food=10, wood=10, iron=5),
         },
         'provides': { # Stats provided by the Citadel at each level
-            1: {'max_buildings': 100, },
-            2: {'max_buildings': 150, },
-            3: {'max_buildings': 200, },
+            1: {'max_buildings': 100, 'storage': Resources(1000, 1000, 500)},
+            2: {'max_buildings': 150, 'storage': Resources(2000, 2000, 1000)},
+            3: {'max_buildings': 200, 'storage': Resources(4000, 4000, 2000)},
         },
         'upgrade': {
             # Level 1 is the starting level, so we define the cost to get to level 2
@@ -131,6 +131,40 @@ BUILDING_DATA = {
             1: 0.10,
             2: 0.15,
             3: 0.20,
+        }
+    }
+,
+    BuildingType.WAREHOUSE: {
+        'build': {
+            'cost': Resources(food=100, wood=250, iron=50),
+            'time': 5,
+        },
+        'upgrade': {
+            2: {'cost': Resources(food=0, wood=300, iron=100), 'time': 60},
+            3: {'cost': Resources(food=0, wood=400, iron=150), 'time': 90},
+        },
+        'provides': { # Base storage provided by the warehouse at each level
+            1: {'storage': Resources(500, 500, 250)},
+            2: {'storage': Resources(1000, 1000, 500)},
+            3: {'storage': Resources(2000, 2000, 1000)},
+        },
+        'adjacency_bonus': {
+            CityTerrainType.FOREST_PLOT.name: 0.10, # +10% storage for each adjacent Forest Plot
+        }
+    },
+    BuildingType.BUILDERS_HUT: {
+        'build': {
+            'cost': Resources(food=100, wood=150, iron=200),
+            'time': 5,
+        },
+        'upgrade': {
+            2: {'cost': Resources(food=0, wood=200, iron=250), 'time': 75},
+            3: {'cost': Resources(food=0, wood=300, iron=350), 'time': 120},
+        },
+        'provides': { # Additive bonus to construction speed. 0.05 = +5% speed.
+            1: {'construction_speed_bonus': 1.00},
+            2: {'construction_speed_bonus': 1.10},
+            3: {'construction_speed_bonus': 1.15},
         }
     }
 }

@@ -13,6 +13,9 @@ class BuildingType(Enum):
     LUMBER_MILL = auto()
     IRON_MINE = auto()
     BARRACKS = auto()
+    WAREHOUSE = auto()
+    BUILDERS_HUT = auto()
+
 
 class TerrainType(Enum):
     """Enumeration for world map tile terrain types."""

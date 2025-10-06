@@ -49,7 +49,7 @@ class Simulator:
                     # Action is complete!
                     completed_action = city.build_queue.pop(0)
                     self._apply_completed_action(completed_action, game_state)
-                    city.update_stats_from_citadel() # Update stats in case citadel was upgraded
+                    city.update_stats() # Update stats in case a stat-providing building was finished
                     state_changed = True
 
         # 3. Calculate and add resource production (prorated for the time slice)
@@ -62,7 +62,11 @@ class Simulator:
                 wood=production_per_hour.wood * time_fraction_of_hour,
                 iron=production_per_hour.iron * time_fraction_of_hour,
             )
-            city.resources += prorated_production
+            new_resources = city.resources + prorated_production
+            # Cap resources at the city's max storage
+            city.resources.food = min(new_resources.food, city.max_resources.food)
+            city.resources.wood = min(new_resources.wood, city.max_resources.wood)
+            city.resources.iron = min(new_resources.iron, city.max_resources.iron)
 
         # 4. Process unit recruitment (would also be time-based)
 
@@ -70,17 +74,18 @@ class Simulator:
         return state_changed
 
     def _get_build_time(self, action, game_state: GameState) -> float:
-        """Gets the total time required for a build/upgrade/demolish action."""
+        """Gets the total time required for an action, adjusted for city bonuses."""
+        base_time = 30.0 # Default fallback
         if isinstance(action, BuildBuildingAction):
             build_data = BUILDING_DATA.get(action.building_type, {}).get('build', {})
-            return build_data.get('time', 30.0)
+            base_time = build_data.get('time', 30.0)
         elif isinstance(action, UpgradeBuildingAction):
             city = game_state.cities.get(action.city_id)
             tile = city.city_map.get_tile(action.position.x, action.position.y) if city else None
             if tile and tile.building:
                 next_level = tile.building.level + 1
                 upgrade_data = BUILDING_DATA.get(tile.building.type, {}).get('upgrade', {}).get(next_level, {})
-                return upgrade_data.get('time', 60.0)
+                base_time = upgrade_data.get('time', 60.0)
         elif isinstance(action, DemolishAction):
             city = game_state.cities.get(action.city_id)
             tile = city.city_map.get_tile(action.position.x, action.position.y) if city else None
@@ -88,11 +93,14 @@ class Simulator:
                 if tile.building:
                     return DEMOLISH_COST_BUILDING.get('time', 15.0)
                 elif tile.terrain in [CityTerrainType.FOREST_PLOT, CityTerrainType.IRON_DEPOSIT]:
-                    return DEMOLISH_COST_RESOURCE.get('time', 20.0)
+                    base_time = DEMOLISH_COST_RESOURCE.get('time', 20.0)
 
-        # Default fallback time
-        print(f"[WARNING] Could not determine build time for action {action}. Using default.")
-        return 30.0 
+        # Apply construction speed modifier from the city
+        city = game_state.cities.get(action.city_id)
+        if city and city.construction_speed_modifier > 0:
+            return base_time / city.construction_speed_modifier
+        
+        return base_time
 
     def _get_build_cost(self, action, game_state: GameState) -> Resources | None:
         """Gets the resource cost for a build/upgrade/demolish action."""
@@ -167,21 +175,6 @@ class Simulator:
 
         return predicted_state
 
-    def _get_neighbors(self, city_map: CityMap, x: int, y: int) -> list[Position]:
-        """
-        Helper function to get valid neighbor positions for a tile in a city map.
-        This was missing from the CityMap class, so it's implemented here.
-        """
-        neighbors = []
-        for dx, dy in [
-            (-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)
-        ]: # 8-directional neighbors
-            nx, ny = x + dx, y + dy
-            # Check if the neighbor is within the map boundaries
-            if 0 <= nx < city_map.width and 0 <= ny < city_map.height:
-                neighbors.append(Position(nx, ny))
-        return neighbors
-
     def calculate_resource_production(self, game_state: GameState, city: City) -> Resources:
         """
         Calculates the total resource production for a single city,
@@ -205,7 +198,7 @@ class Simulator:
                 adjacency_bonus_multiplier = 1.0
 
                 if 'adjacency_bonus' in building_data:
-                    for neighbor_pos in self._get_neighbors(city_map, x, y):
+                    for neighbor_pos in city_map.get_neighbors(x, y):
                         neighbor_tile = city_map.get_tile(neighbor_pos.x, neighbor_pos.y)
                         if neighbor_tile and neighbor_tile.terrain.name in building_data['adjacency_bonus']:
                             adjacency_bonus_multiplier += building_data['adjacency_bonus'][neighbor_tile.terrain.name]

@@ -323,7 +323,7 @@ class UIManager:
         else: # No building
             if tile.terrain == CityTerrainType.GRASS:
                 # Any production building can be built on grass
-                buildable = [BuildingType.FARM, BuildingType.LUMBER_MILL, BuildingType.IRON_MINE, BuildingType.BARRACKS]
+                buildable = [BuildingType.FARM, BuildingType.LUMBER_MILL, BuildingType.IRON_MINE, BuildingType.BARRACKS, BuildingType.WAREHOUSE, BuildingType.BUILDERS_HUT]
                 for b_type in buildable:
                     building_data = BUILDING_DATA.get(b_type, {})
                     build_cost = building_data.get('build', {}).get('cost')

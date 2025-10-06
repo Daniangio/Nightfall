@@ -66,7 +66,7 @@ class GameState:
                 city = City(id=place_data['id'], name=place_data['name'], player_id=place_data['player_id'],
                             position=Position(**place_data['position']), city_map=CityMap.load_from_file(city_map_path),
                             resources=Resources(**place_data.get('initial_resources', {})))
-                city.update_stats_from_citadel() # Calculate initial stats
+                city.update_stats() # Calculate initial stats
                 cities[city.id] = city
                 if city.player_id in player_city_map:
                     players[city.player_id].city_ids.append(city.id)

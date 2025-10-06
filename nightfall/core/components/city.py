@@ -74,6 +74,21 @@ class CityMap:
             return self.tiles[x][y]
         return None
 
+    def get_neighbors(self, x: int, y: int) -> list[Position]:
+        """
+        Helper function to get valid neighbor positions for a tile.
+        """
+        neighbors = []
+        # 8-directional neighbors
+        for dx, dy in [
+            (-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)
+        ]:
+            nx, ny = x + dx, y + dy
+            # Check if the neighbor is within the map boundaries
+            if 0 <= nx < self.width and 0 <= ny < self.height:
+                neighbors.append(Position(nx, ny))
+        return neighbors
+
     def deep_copy(self) -> CityMap:
         new_map = CityMap(self.width, self.height)
         new_map.tiles = [[tile.deep_copy() for tile in row] for row in self.tiles]
@@ -134,29 +149,61 @@ class City:
     build_queue: List[Action] = field(default_factory=list)
     num_buildings: int = 0
     max_buildings: int = 0
+    max_resources: Resources = field(default_factory=Resources)
+    construction_speed_modifier: float = 1.0 # 1.0 = 100% speed
     recruitment_queue: List[RecruitmentProgress] = field(default_factory=list)
     garrison: dict = field(default_factory=dict)
 
 
-    def update_stats_from_citadel(self):
-        """Recalculates city-wide stats based on the Citadel's level."""
+    def update_stats(self):
+        """Recalculates all city-wide stats based on all buildings."""
         citadel = None
         num_buildings = 0
+        
+        # Reset stats before recalculating
+        self.max_resources = Resources()
+        self.construction_speed_modifier = 1.0
+
         for row in self.city_map.tiles:
             for tile in row:
                 if tile.building:
                     num_buildings += 1
-                    if tile.building.type == BuildingType.CITADEL:
+                    building = tile.building
+                    building_data = BUILDING_DATA.get(building.type)
+                    if not building_data: continue
+
+                    if building.type == BuildingType.CITADEL:
                         citadel = tile.building
+
+                    # Calculate provided stats like storage and speed bonuses
+                    provided_stats = building_data.get('provides', {}).get(building.level, {})
+                    
+                    if 'storage' in provided_stats:
+                        base_storage = provided_stats['storage']
+                        adjacency_bonus_multiplier = 1.0
+                        # Apply adjacency bonus for warehouses
+                        bonus_data = building_data.get('adjacency_bonus')
+                        if bonus_data:
+                            for neighbor_pos in self.city_map.get_neighbors(tile.position.x, tile.position.y):
+                                neighbor_tile = self.city_map.get_tile(neighbor_pos.x, neighbor_pos.y)
+                                if neighbor_tile and neighbor_tile.terrain.name in bonus_data:
+                                    adjacency_bonus_multiplier += bonus_data[neighbor_tile.terrain.name]
+
+                        self.max_resources += base_storage * adjacency_bonus_multiplier
+
+                    if 'construction_speed_bonus' in provided_stats:
+                        self.construction_speed_modifier += provided_stats['construction_speed_bonus']
+
         if not citadel:
             print(f"Warning: City '{self.name}' has no Citadel. Stats will be zero.")
             return
 
         self.num_buildings = num_buildings
 
-        citadel_stats = BUILDING_DATA[BuildingType.CITADEL]['provides'].get(citadel.level, {})
-        self.max_buildings = citadel_stats.get('max_buildings', 0)
-
+        # Citadel provides some base stats directly
+        citadel_provides = BUILDING_DATA[BuildingType.CITADEL]['provides'].get(citadel.level, {})
+        self.max_buildings = citadel_provides.get('max_buildings', 0)
+        self.max_resources += citadel_provides.get('storage', Resources())
 
     def deep_copy(self) -> City:
         new_city = City(self.id, self.name, self.player_id, self.position, self.city_map.deep_copy())
@@ -165,7 +212,7 @@ class City:
         new_city.recruitment_queue = [progress.deep_copy() for progress in self.recruitment_queue]
         new_city.garrison = self.garrison.copy()
 
-        new_city.update_stats_from_citadel() # Recalculate to be safe
+        new_city.update_stats() # Recalculate to be safe
         return new_city
 
     def to_dict(self) -> dict:
@@ -177,6 +224,8 @@ class City:
             'city_map': self.city_map.to_dict(),
             'resources': self.resources.__dict__,
             'build_queue': [action.to_dict() for action in self.build_queue],
+            'max_resources': self.max_resources.__dict__,
+            'construction_speed_modifier': self.construction_speed_modifier,
             'recruitment_queue': [progress.to_dict() for progress in self.recruitment_queue],
             'garrison': {unit_type.name: count for unit_type, count in self.garrison.items()}
         }
@@ -202,11 +251,13 @@ class City:
             position=Position(**data['position']),
             city_map=CityMap.from_dict(data['city_map']),
             resources=Resources(**data['resources']),
+            max_resources=Resources(**data.get('max_resources', {})),
+            construction_speed_modifier=data.get('construction_speed_modifier', 1.0),
             build_queue=queue,
             recruitment_queue=recruitment_queue,
             garrison={UnitType[unit_name]: count for unit_name, count in data.get('garrison', {}).items()}
         )
         
         # Ensure stats are calculated and AP is full on creation.
-        city.update_stats_from_citadel()
+        city.update_stats()
         return city
