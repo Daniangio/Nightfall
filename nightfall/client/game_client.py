@@ -1,5 +1,6 @@
 import pygame
 import sys
+from nightfall.core.common.datatypes import Resources
 from nightfall.client.network_client import NetworkClient
 from nightfall.client.renderer import Renderer
 from nightfall.client.input_handler import InputHandler
@@ -81,12 +82,15 @@ class GameClient:
 
             if msg_type == "initial_state" or msg_type == "state_update":
                 self.server_state = GameState.from_dict(payload)
-                self.action_queue = self.server_state.players[PLAYER_ID].action_queue
+                # The server state is the new source of truth.
+                # The server has processed our actions by adding them to the city's build queue
+                # and consuming resources. Our local action_queue is now empty because the
+                # actions are now reflected in the city's build_queue in the new server_state.
+                self.action_queue.clear() 
                 self.client_state = "IN_GAME"
                 self.ui_manager.clear_lobby_buttons() # Clean up lobby UI state
                 # After receiving a new state, we must re-predict to see the effects of the queue.
                 self._repredict_state()
-                self.status_message = f"Turn: {self.server_state.turn}"
             elif msg_type == "ack":
                 print(f"[CLIENT] Received ACK from server: {payload.get('message')}")
                 self.status_message = payload.get('message', self.status_message)
@@ -107,11 +111,8 @@ class GameClient:
             self._send_orders()
         elif action_type == "remove_action":
             index = action.get("index")
-            if 0 <= index < len(self.action_queue):
-                self.action_queue.pop(index)
-                self._send_orders()
-        elif action_type == "end_day":
-            self.network_client.send_message({"command": "ready", "player_id": PLAYER_ID, "payload": {}})
+            # Send a specific command to the server to cancel an item in the build queue
+            self.network_client.send_message({"command": "cancel_order", "player_id": PLAYER_ID, "payload": {"city_id": CITY_ID, "index": index}})
         elif action_type == "exit_session":
             self.network_client.send_message({"command": "leave_session", "player_id": PLAYER_ID})
             self._return_to_lobby()
@@ -122,15 +123,28 @@ class GameClient:
 
     def _send_orders(self):
         """Sends the current action queue to the server and repredicts state."""
-        orders_data = [act.to_dict() for act in self.action_queue]
-        self.network_client.send_message({"command": "set_orders", "player_id": PLAYER_ID, "payload": orders_data})
+        # We only send the newest action. The server will process it and send a full state update.
+        if self.action_queue:
+            new_order_data = self.action_queue[-1].to_dict()
+            self.network_client.send_message({"command": "set_orders", "player_id": PLAYER_ID, "payload": [new_order_data]})
         self._repredict_state()
 
     def _repredict_state(self):
         """Recalculate the predicted state from the last known server state."""
         if self.server_state:
+            # --- Preserve Progress ---
+            # Before predicting, save the progress of items currently in the queue.
+            progress_map = {}
+            if self.predicted_state:
+                city = self.predicted_state.cities.get(CITY_ID)
+                if city:
+                    for i, action in enumerate(city.build_queue):
+                        # Use a tuple of (type, position) as a unique key for the action
+                        key = (action.__class__.__name__, getattr(action, 'position', None))
+                        progress_map[key] = action.progress
+
             self.predicted_state = self.simulator.predict_outcome(
-                self.server_state, self.action_queue, PLAYER_ID
+                self.server_state, self.action_queue, PLAYER_ID, progress_map
             )
     
     def _return_to_lobby(self):
@@ -146,29 +160,31 @@ class GameClient:
         if self.client_state != "IN_GAME" or not self.predicted_state:
             return
 
-        city = self.predicted_state.players[PLAYER_ID].get_city(CITY_ID, self.predicted_state.cities)
+        city = self.predicted_state.cities.get(CITY_ID)
         if city:
             # Correctly pass the full predicted state to the calculator
             self.ui_manager.predicted_production = self.simulator.calculate_resource_production(
                 self.predicted_state, city
             )
         
-        self.ui_manager.update_action_queue_ui(self.action_queue)
+        # The UI should be updated based on the city's actual build queue from the predicted state.
+        build_queue = city.build_queue if city else []
+        self.ui_manager.update_action_queue_ui(build_queue)
 
     def _render(self):
         """Render the entire game screen based on the current client state."""
         self.screen.fill((0, 0, 0)) # Black background
         if self.client_state == "LOBBY":
             self.renderer.draw_lobby_screen(self.ui_manager)
-
         elif self.client_state == "IN_GAME" and self.predicted_state:
-            # Pass the correct production and action queue to the renderer
+            # Pass the correct production and the city's build_queue to the renderer
             city = self.predicted_state.cities[CITY_ID]
             self.renderer.draw(
                 game_state=self.predicted_state,
                 ui_manager=self.ui_manager,
                 production=self.ui_manager.predicted_production,
-                action_queue=self.action_queue
+                action_queue=city.build_queue,
+                simulator=self.simulator
             )
         else:
             self.renderer.draw_status_screen(self.status_message)
@@ -177,12 +193,31 @@ class GameClient:
 
     def _tick(self):
         """Handles time-based events and clock ticking."""
-        self.clock.tick(60)
+        delta_time_ms = self.clock.tick(60)
+        delta_time_s = delta_time_ms / 1000.0
+
         if self.client_state == "LOBBY":
             self.lobby_timer += self.clock.get_time()
             if self.lobby_timer >= 5000: # Refresh lobby every 5 seconds
                 self.network_client.send_message({"command": "list_sessions"})
                 self.lobby_timer = 0
+        
+        elif self.client_state == "IN_GAME" and self.predicted_state:
+            # Simulate resource gain locally for a smooth UI
+            for city in self.predicted_state.cities.values():
+                production_per_hour = self.simulator.calculate_resource_production(self.predicted_state, city)
+                time_fraction_of_hour = delta_time_s / 3600.0
+                city.resources.food += production_per_hour.food * time_fraction_of_hour
+                city.resources.wood += production_per_hour.wood * time_fraction_of_hour
+                city.resources.iron += production_per_hour.iron * time_fraction_of_hour
+            
+            # Simulate progress on the current build item
+            city = self.predicted_state.cities.get(CITY_ID)
+            if city and city.build_queue:
+                first_item = city.build_queue[0]
+                first_item.progress += delta_time_s
+                # We don't complete it here; we just simulate progress for the UI.
+                # The server is the authority on completion.
 
     def shutdown(self):
         """Cleanly shut down the client."""

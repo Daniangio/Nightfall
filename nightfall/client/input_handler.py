@@ -153,7 +153,6 @@ class InputHandler:
     def _handle_mouse_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
         """Handles a single, discrete mouse click (not a drag)."""
         from nightfall.core.common.datatypes import Position
-        # 1. Check global buttons first (End Day, Exit)
         # This logic is now handled by components.
         
         # 2. Check top bar view-switching buttons
@@ -220,10 +219,12 @@ class InputHandler:
 
     def _handle_city_tile_click(self, grid_pos: Position, state: GameState, city_id: str, action_queue: list):
         """Sets the context menu based on a click on a city tile."""
-        city = state.cities[city_id]
+        city = state.cities.get(city_id)
+        if not city: return
+
         tile = city.city_map.get_tile(grid_pos.x, grid_pos.y)
         if tile:
-            self.ui_manager.set_context_menu_for_tile(grid_pos, tile, state, city_id, action_queue)
+            self.ui_manager.set_context_menu_for_tile(grid_pos, tile, state, city_id, city.build_queue)
 
     def _handle_context_menu_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
         """Handles a click within an active context menu."""

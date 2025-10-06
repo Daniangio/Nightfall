@@ -12,6 +12,7 @@ from nightfall.config import PROJECT_ROOT
 # --- Server Configuration ---
 HOST, PORT = "localhost", 9999
 WORLD_FILE = PROJECT_ROOT / "nightfall/server/data/world.json"
+TURN_INTERVAL_SECONDS = 1 # Each "turn" simulates 1 second of game time.
 
 class GameSession:
     """Manages the state and logic for a single game session."""
@@ -20,22 +21,27 @@ class GameSession:
         self.state = initial_state
         self.simulator = Simulator()
         self.lock = threading.Lock()
+        self.is_running = True
+        self.simulation_thread = threading.Thread(target=self.game_loop, daemon=True)
         
         # Player management for this session
         self.clients = {}  # player_id -> handler
-        self.player_ready_status = {pid: False for pid in self.state.players}
+        self.players_in_session = set() # Tracks all players who have ever joined.
         print(f"GameSession '{session_id}' created.")
 
     def handle_new_player(self, player_id, handler):
         with self.lock:
             # If player is rejoining, just update their handler. Otherwise, initialize them.
             self.clients[player_id] = handler
-            if player_id not in self.player_ready_status:
-                # This case is for dynamically adding players to a running game, not currently used.
-                self.player_ready_status[player_id] = False
+            if player_id not in self.players_in_session:
+                self.players_in_session.add(player_id)
                 print(f"Player '{player_id}' joined session '{self.session_id}' for the first time.")
             else:
                 print(f"Player '{player_id}' reconnected to session '{self.session_id}'.")
+
+            # Start the simulation loop when the first player joins
+            if not self.simulation_thread.is_alive():
+                self.simulation_thread.start()
 
     def remove_player(self, player_id):
         with self.lock:
@@ -49,41 +55,55 @@ class GameSession:
             if not player:
                 return {"status": "error", "message": f"Player '{player_id}' not in this session."}
             # When new orders are set, the player is no longer ready.
-            action_class_map = GameState.ACTION_CLASS_MAP
-            player.action_queue = [Action.from_dict(data, action_class_map) for data in actions_data]
-            self.player_ready_status[player_id] = False # Un-ready the player
+            # The player's action queue is now a temporary holding place for new commands
+            # that will be processed by the simulator.
+            new_actions = [Action.from_dict(data, GameState.ACTION_CLASS_MAP) for data in actions_data]
+            player.action_queue.extend(new_actions)
             print(f"Received orders from player '{player_id}' in session '{self.session_id}'.")
             return {"status": "success", "message": "Orders received."}
 
-    def handle_ready(self, player_id):
+    def handle_cancel_order(self, player_id, payload):
         with self.lock:
-            if player_id in self.player_ready_status:
-                self.player_ready_status[player_id] = True
-                print(f"Player '{player_id}' is ready in session '{self.session_id}'.")
-                self.check_for_turn_simulation()
-            return {"status": "success", "message": "Ready status updated."}
+            city_id = payload.get("city_id")
+            index = payload.get("index")
+            city = self.state.cities.get(city_id)
 
-    def check_for_turn_simulation(self):
-        if not self.player_ready_status or not self.clients:
-            return
-        
-        # Only check against players currently connected to this session
-        all_ready = self.clients and all(self.player_ready_status.get(pid, False) for pid in self.clients)
+            if not city or city.player_id != player_id:
+                return {"status": "error", "message": "Invalid city or not owner."}
+            
+            if index is None or not (0 <= index < len(city.build_queue)):
+                return {"status": "error", "message": "Invalid action index."}
 
-        if all_ready:
-            print(f"\n--- All players ready in session '{self.session_id}'! Simulating turn. ---")
-            # The action queues are already on the player objects in the game state.
-            self.simulator.simulate_full_turn(self.state)
+            # Remove the action and refund the cost
+            action_to_cancel = city.build_queue.pop(index)
+            cost = self.simulator._get_build_cost(action_to_cancel, game_state=self.state)
+            if cost:
+                city.resources += cost
+                print(f"Player '{player_id}' canceled action '{action_to_cancel}'. Refunded {cost}.")
             
-            for pid in self.player_ready_status:
-                if pid in self.clients: # Only un-ready active players
-                    self.player_ready_status[pid] = False
-            
-            # In a real game, each session would have its own save file
-            # self.state.save_to_file(f"data/{self.session_id}.json")
-            
-            print(f"--- Turn {self.state.turn} simulated. Broadcasting new state to session clients. ---\n")
-            self.broadcast_state()
+            self.broadcast_state() # Notify clients of the change
+            return {"status": "success", "message": "Action canceled."}
+
+    def game_loop(self):
+        """The main simulation loop for the game session."""
+        print(f"[{self.session_id}] Game loop started.")
+        while self.is_running:
+            start_time = time.time()
+
+            with self.lock:
+                # The action queues are on the player objects in the game state.
+                # The simulator will process them and update the state.
+                state_was_updated = self.simulator.simulate_time_slice(self.state, TURN_INTERVAL_SECONDS)
+
+                if state_was_updated:
+                    print(f"--- [{time.strftime('%H:%M:%S')}] State updated. Broadcasting to session clients. ---")
+                    self.broadcast_state()
+
+            # Wait for the next tick
+            time_to_sleep = TURN_INTERVAL_SECONDS - (time.time() - start_time)
+            if time_to_sleep > 0:
+                time.sleep(time_to_sleep)
+
     def broadcast_state(self):
         # The state object is the single source of truth. Just serialize and send.
         payload = self.state.to_dict()
@@ -92,6 +112,11 @@ class GameSession:
                 handler.send_response("state_update", payload)
             except OSError as e:
                 print(f"Error broadcasting to a client: {e}")
+
+    def stop(self):
+        """Stops the game session simulation."""
+        self.is_running = False
+        print(f"[{self.session_id}] Game loop stopped.")
 
 class MasterServer:
     """Manages all active game sessions and new connections."""
@@ -119,6 +144,13 @@ class MasterServer:
     def get_session(self, session_id) -> Optional[GameSession]:
         with self.lock:
             return self.sessions.get(session_id)
+
+    def shutdown_all_sessions(self):
+        with self.lock:
+            print("Shutting down all active game sessions...")
+            for session in self.sessions.values():
+                session.stop()
+            self.sessions.clear()
     
 master_server = MasterServer()
 
@@ -186,8 +218,8 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
 
             if command == "set_orders":
                 response_data = self.session.handle_set_orders(player_id, payload)
-            elif command == "ready":
-                response_data = self.session.handle_ready(player_id)
+            elif command == "cancel_order":
+                response_data = self.session.handle_cancel_order(player_id, payload)
             elif command == "leave_session":
                 self.session.remove_player(player_id)
                 self.session = None # Detach handler from session
@@ -222,6 +254,7 @@ def main():
         except KeyboardInterrupt:
             print("Shutting down server.")
             server.shutdown()
+            master_server.shutdown_all_sessions()
 
 if __name__ == "__main__":
     main()

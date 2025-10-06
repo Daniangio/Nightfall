@@ -1,8 +1,10 @@
 import pygame
 
+from nightfall.core.common.datatypes import Position
 from nightfall.client.ui.components.panel_component import SidePanelComponent
 from nightfall.core.state.game_state import GameState
 from nightfall.client.enums import ActiveView
+from nightfall.core.actions.city_actions import BuildBuildingAction, UpgradeBuildingAction, DemolishAction
 # Constants
 CITY_TILE_SIZE = 50
 WORLD_TILE_SIZE = 40 # This can remain as it defines the world grid scale
@@ -13,6 +15,7 @@ C_BLACK, C_WHITE, C_RED, C_GREEN = (0,0,0), (255,255,255), (200,0,0), (0,200,0)
 C_BLUE, C_YELLOW, C_GRAY = (65,105,225), (255,215,0), (50,50,50)
 C_DARK_GRAY = (30,30,30)
 C_LIGHT_GRAY, C_CYAN = (150,150,150), (0,255,255)
+C_GOLD = (255, 215, 0)
 WORLD_TERRAIN_COLORS = {'PLAINS': (152, 251, 152), 'FOREST': (34, 139, 34), 'MOUNTAIN': (139, 137, 137), 'LAKE': C_BLUE}
 CITY_TERRAIN_COLORS = {'GRASS': (50, 205, 50), 'FOREST_PLOT': (139, 69, 19), 'IRON_DEPOSIT': C_LIGHT_GRAY, 'WATER': C_BLUE}
 
@@ -26,9 +29,16 @@ class Renderer:
         self.screen = screen
         self.font_s = pygame.font.Font(None, 24)
         self.font_m = pygame.font.Font(None, 32) 
+        self.font_xs = pygame.font.Font(None, 18)
+        # Create a semi-transparent surface for ghost buildings
+        self.ghost_surface = pygame.Surface((CITY_TILE_SIZE, CITY_TILE_SIZE), pygame.SRCALPHA)
+        self.ghost_surface.fill((200, 200, 200, 100)) # Light gray, semi-transparent
+        # Create a semi-transparent surface for upgrade indicators
+        self.upgrade_surface = pygame.Surface((CITY_TILE_SIZE, CITY_TILE_SIZE), pygame.SRCALPHA)
+        self.upgrade_surface.fill((0, 40, 180, 70)) # Light blue, semi-transparent
         # The renderer will eventually not need these, but components might borrow them for now.
 
-    def draw(self, game_state, ui_manager, production, action_queue):
+    def draw(self, game_state, ui_manager, production, action_queue, simulator):
         self.screen.fill(C_BLACK)
         
         if ui_manager.active_view == ActiveView.WORLD_MAP:
@@ -36,7 +46,7 @@ class Renderer:
         elif ui_manager.active_view == ActiveView.CITY_VIEW:
             city = game_state.cities.get(ui_manager.viewed_city_id)
             if city:
-                self.draw_city_view(game_state, city, ui_manager, production, action_queue)
+                self.draw_city_view(game_state, city, ui_manager, production, action_queue, simulator)
             else:
                 # Fallback if city isn't found
                 self.draw_world_map_view(game_state, ui_manager)
@@ -48,7 +58,13 @@ class Renderer:
         
         # --- Component-Based Drawing ---
         for component in ui_manager.components:
-            component.draw(self.screen, game_state=game_state, city=city_for_panel, production=production, action_queue=action_queue)
+            # The SidePanelComponent needs the simulator, so we pass it along.
+            # Other components might not use all arguments, which is fine with keyword args.
+            if isinstance(component, SidePanelComponent):
+                 component.draw(self.screen, game_state=game_state, city=city_for_panel, production=production, action_queue=action_queue, simulator=simulator)
+            else:
+                 # Fallback for other potential components
+                 component.draw(self.screen, game_state=game_state, city=city_for_panel, production=production, action_queue=action_queue)
         
         # Draw top bar over everything else (order matters)
         self.draw_top_bar(ui_manager)
@@ -101,9 +117,13 @@ class Renderer:
         """Draws the main world map, showing all cities."""
         self.draw_world_map(game_state.game_map, game_state.cities, ui_manager)
 
-    def draw_city_view(self, game_state, city, ui_manager, production, action_queue):
+    def draw_city_view(self, game_state, city, ui_manager, production, action_queue, simulator):
         city_map = city.city_map
         selected_tile = ui_manager.selected_city_tile
+
+        # Create a lookup for faster checking of queued actions by position
+        queued_actions = {getattr(action, 'position'): action for action in action_queue if hasattr(action, 'position')}
+        currently_building_action = action_queue[0] if action_queue else None
         
         for y in range(city_map.height):
             for x in range(city_map.width):
@@ -117,14 +137,54 @@ class Renderer:
                     self.screen.fill(color, rect)
                     pygame.draw.rect(self.screen, C_BLACK, rect, 1)
                     
+                    tile_pos = Position(x, y)
+                    
                     if tile.building:
                         b_char = tile.building.type.name[0]
                         lvl = str(tile.building.level)
                         text_surf = self.font_m.render(b_char, True, C_BLACK)
                         self.screen.blit(text_surf, (rect.centerx - 8, rect.centery - 12))
-                        lvl_surf = self.font_s.render(lvl, True, C_RED)
+                        lvl_surf = self.font_xs.render(lvl, True, C_GOLD)
                         self.screen.blit(lvl_surf, (rect.right - 10, rect.bottom - 18))
-        
+
+                        # Draw upgrade indicator if queued
+                        if tile_pos in queued_actions and isinstance(queued_actions[tile_pos], UpgradeBuildingAction):
+                            self.screen.blit(self.upgrade_surface, rect.topleft)
+                            upgrade_surf = self.font_m.render("^", True, C_DARK_GRAY)
+                            self.screen.blit(upgrade_surf, (rect.left + 2, rect.top))
+                        # Draw demolish indicator if queued on a building
+                        elif tile_pos in queued_actions and isinstance(queued_actions[tile_pos], DemolishAction):
+                            pygame.draw.line(self.screen, C_RED, (rect.left + 5, rect.top + 5), (rect.right - 5, rect.bottom - 5), 4)
+                            pygame.draw.line(self.screen, C_RED, (rect.left + 5, rect.bottom - 5), (rect.right - 5, rect.top + 5), 4)
+
+
+                    elif tile_pos in queued_actions:
+                        # This is a "ghost" building (a BuildBuildingAction on an empty tile)
+                        queued_action = queued_actions[tile_pos]
+                        if isinstance(queued_action, BuildBuildingAction):
+                            self.screen.blit(self.ghost_surface, rect.topleft)
+                            b_char = queued_action.building_type.name[0]
+                            text_surf = self.font_m.render(b_char, True, (0,0,0,150)) # Semi-transparent text
+                            self.screen.blit(text_surf, (rect.centerx - 8, rect.centery - 12))
+                        # Draw demolish indicator if queued on a plot
+                        elif isinstance(queued_action, DemolishAction):
+                            pygame.draw.line(self.screen, C_RED, (rect.left + 5, rect.top + 5), (rect.right - 5, rect.bottom - 5), 4)
+                            pygame.draw.line(self.screen, C_RED, (rect.left + 5, rect.bottom - 5), (rect.right - 5, rect.top + 5), 4)
+
+        # --- Draw Time and Selection Separately to ensure they are on top ---
+        # Draw remaining time for the currently building item
+        if currently_building_action and hasattr(currently_building_action, 'position'):
+            pos = currently_building_action.position
+            rect = ui_manager.get_city_tile_rect(pos.x, pos.y)
+            total_time = simulator._get_build_time(currently_building_action, game_state)
+            remaining_time = max(0, total_time - currently_building_action.progress)
+            
+            time_surf = self.font_xs.render(ui_manager._format_time(remaining_time), True, C_WHITE)
+            time_rect = time_surf.get_rect(centerx=rect.centerx, top=rect.bottom + 2)
+            bg_rect = time_rect.inflate(4, 2)
+            pygame.draw.rect(self.screen, C_BLACK, bg_rect, border_radius=3)
+            self.screen.blit(time_surf, time_rect)
+
         if selected_tile:
             rect = ui_manager.get_city_tile_rect(selected_tile.x, selected_tile.y)
             pygame.draw.rect(self.screen, C_CYAN, rect, 3)

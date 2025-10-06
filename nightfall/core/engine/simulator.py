@@ -1,67 +1,169 @@
 from nightfall.core.state.game_state import GameState
-from nightfall.core.components.city import City, CityMap
-from nightfall.core.common.game_data import BUILDING_DATA
+from nightfall.core.common.game_data import BUILDING_DATA, DEMOLISH_COST_BUILDING, DEMOLISH_COST_RESOURCE
+from nightfall.core.components.city import City, CityMap, Building
 from nightfall.core.common.datatypes import Resources, Position
-from nightfall.core.common.enums import BuildingType
+from nightfall.core.common.enums import BuildingType, CityTerrainType
+from nightfall.core.actions.city_actions import BuildBuildingAction, UpgradeBuildingAction, DemolishAction
 
 class Simulator:
     """
     Handles the core game logic for simulating turns and predicting outcomes.
     This class is stateless and operates on a given GameState object.
     """
-
-    def simulate_full_turn(self, game_state: GameState):
+    def simulate_time_slice(self, game_state: GameState, time_delta: float) -> bool:
         """
-        Simulates a full turn for all players.
+        Simulates a slice of time for the entire game state.
         This modifies the game_state object in place.
+        
+        Args:
+            game_state: The current state of the game.
+            time_delta: The amount of time in seconds that has passed.
+        
+        Returns:
+            True if the state was changed in a way that clients need to be notified, False otherwise.
         """
-        # 1. Replenish Action Points for all cities
-        for city in game_state.cities.values():
-            # This is the corrected logic. We SET the action points to the max, not add to them.
-            city.action_points = city.max_action_points
+        state_changed = False
 
-        # 2. Process build queues for all players
+        # 1. Process incoming player actions and add them to city build queues
         for player in game_state.players.values():
-            # Create a copy of the queue to iterate over, as actions might be removed
             actions_to_process = list(player.action_queue)
             player.action_queue.clear() # Clear the original queue
 
             for action in actions_to_process:
-                # In a real scenario, you might check if the player still owns the city
                 if action.execute(game_state):
                     print(f"Successfully executed action: {action}")
+                    state_changed = True # The queue has changed, client needs update
                 else:
-                    # If an action fails, it's simply discarded.
-                    # A more complex system might refund resources.
                     print(f"Failed to execute action: {action}. It has been removed from the queue.")
-
-        # 3. Calculate and add resource production
+        
+        # 2. Process city build queues
         for city in game_state.cities.values():
-            production = self.calculate_resource_production(game_state, city)
-            city.resources += production
+            if city.build_queue:
+                # Add progress to the first item in the queue
+                first_item = city.build_queue[0]
+                first_item.progress += time_delta
 
-        # 4. Process unit recruitment
-        # (This logic would go here)
+                # Check if it's finished
+                build_time = self._get_build_time(first_item, game_state)
+                if first_item.progress >= build_time:
+                    # Action is complete!
+                    completed_action = city.build_queue.pop(0)
+                    self._apply_completed_action(completed_action, game_state)
+                    city.update_stats_from_citadel() # Update stats in case citadel was upgraded
+                    state_changed = True
 
-        # 5. Increment turn counter
-        game_state.turn += 1
+        # 3. Calculate and add resource production (prorated for the time slice)
+        for city in game_state.cities.values():
+            # Production values are per hour (3600 seconds).
+            production_per_hour = self.calculate_resource_production(game_state, city)
+            time_fraction_of_hour = time_delta / 3600.0
+            prorated_production = Resources(
+                food=production_per_hour.food * time_fraction_of_hour,
+                wood=production_per_hour.wood * time_fraction_of_hour,
+                iron=production_per_hour.iron * time_fraction_of_hour,
+            )
+            city.resources += prorated_production
 
-    def predict_outcome(self, base_state: GameState, action_queue: list, player_id: str) -> GameState:
+        # 4. Process unit recruitment (would also be time-based)
+
+        # 5. Increment turn counter (now represents a time tick)
+        return state_changed
+
+    def _get_build_time(self, action, game_state: GameState) -> float:
+        """Gets the total time required for a build/upgrade/demolish action."""
+        if isinstance(action, BuildBuildingAction):
+            build_data = BUILDING_DATA.get(action.building_type, {}).get('build', {})
+            return build_data.get('time', 30.0)
+        elif isinstance(action, UpgradeBuildingAction):
+            city = game_state.cities.get(action.city_id)
+            tile = city.city_map.get_tile(action.position.x, action.position.y) if city else None
+            if tile and tile.building:
+                next_level = tile.building.level + 1
+                upgrade_data = BUILDING_DATA.get(tile.building.type, {}).get('upgrade', {}).get(next_level, {})
+                return upgrade_data.get('time', 60.0)
+        elif isinstance(action, DemolishAction):
+            city = game_state.cities.get(action.city_id)
+            tile = city.city_map.get_tile(action.position.x, action.position.y) if city else None
+            if tile:
+                if tile.building:
+                    return DEMOLISH_COST_BUILDING.get('time', 15.0)
+                elif tile.terrain in [CityTerrainType.FOREST_PLOT, CityTerrainType.IRON_DEPOSIT]:
+                    return DEMOLISH_COST_RESOURCE.get('time', 20.0)
+
+        # Default fallback time
+        print(f"[WARNING] Could not determine build time for action {action}. Using default.")
+        return 30.0 
+
+    def _get_build_cost(self, action, game_state: GameState) -> Resources | None:
+        """Gets the resource cost for a build/upgrade/demolish action."""
+        if isinstance(action, BuildBuildingAction):
+            build_data = BUILDING_DATA.get(action.building_type, {}).get('build', {})
+            return build_data.get('cost') # Returns a Resources object or None
+        elif isinstance(action, UpgradeBuildingAction):
+            city = game_state.cities.get(action.city_id)
+            tile = city.city_map.get_tile(action.position.x, action.position.y) if city else None
+            if tile and tile.building:
+                # The action was queued to go from the current level to the next.
+                next_level = tile.building.level + 1
+                upgrade_data = BUILDING_DATA.get(tile.building.type, {}).get('upgrade', {}).get(next_level, {})
+                return upgrade_data.get('cost')
+        elif isinstance(action, DemolishAction):
+            city = game_state.cities.get(action.city_id)
+            tile = city.city_map.get_tile(action.position.x, action.position.y) if city else None
+            if tile:
+                if tile.building:
+                    return DEMOLISH_COST_BUILDING.get('cost')
+                elif tile.terrain in [CityTerrainType.FOREST_PLOT, CityTerrainType.IRON_DEPOSIT]:
+                    return DEMOLISH_COST_RESOURCE.get('cost')
+        return None
+
+    def _apply_completed_action(self, action, game_state: GameState):
+        """Applies the effects of a completed construction action to the game state."""
+        city = game_state.cities.get(action.city_id)
+        if not city: return
+        tile = city.city_map.get_tile(action.position.x, action.position.y)
+        if not tile: return
+
+        if isinstance(action, BuildBuildingAction):
+            tile.building = Building(action.building_type, 1)
+            print(f"[SIM] Completed: Build {action.building_type.value} at {action.position}.")
+        elif isinstance(action, UpgradeBuildingAction) and tile.building:
+            tile.building.level += 1
+            print(f"[SIM] Completed: Upgrade {tile.building.type.value} at {action.position} to level {tile.building.level}.")
+        elif isinstance(action, DemolishAction):
+            if tile.building:
+                tile.building = None
+                print(f"[SIM] Completed: Demolish building at {action.position}.")
+            elif tile.terrain in [CityTerrainType.FOREST_PLOT, CityTerrainType.IRON_DEPOSIT]:
+                tile.terrain = CityTerrainType.GRASS
+                print(f"[SIM] Completed: Clear plot at {action.position}.")
+
+    def predict_outcome(self, base_state: GameState, action_queue: list, player_id: str, progress_map: dict = None) -> GameState:
         """
         Creates a deep copy of the game state and simulates the provided action
         queue to show a predicted outcome to the client.
         """
-        predicted_state = base_state.deep_copy()
+        predicted_state = base_state.deep_copy() # Start from the last authoritative state
         player = predicted_state.players.get(player_id)
         if not player:
             return predicted_state # Should not happen
 
-        # Temporarily assign the new action queue for prediction
-        player.action_queue = action_queue
-
-        # Simulate execution of the queue
-        for action in player.action_queue:
+        # On the client, "adding to the queue" is now a prediction of what happens
+        # when the server accepts the action. The action is immediately added to the
+        # city's build queue for prediction purposes.
+        # We need to find the right city to add the actions to.
+        for action in action_queue:
             action.execute(predicted_state) # This modifies the predicted_state
+
+        # After adding new actions, restore the progress of existing actions
+        if progress_map:
+            for city in predicted_state.cities.values():
+                if city.player_id == player_id:
+                    for action in city.build_queue:
+                        key = (action.__class__.__name__, getattr(action, 'position', None))
+                        if key in progress_map:
+                            action.progress = progress_map[key]
+
 
         return predicted_state
 

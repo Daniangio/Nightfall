@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     # This block is only read by type checkers, not at runtime
     from nightfall.client.ui_manager import UIManager
     from nightfall.core.state.game_state import GameState
+    from nightfall.core.engine.simulator import Simulator
 
 # Colors
 C_BLACK, C_WHITE, C_RED = (0,0,0), (255,255,255), (200,0,0)
@@ -45,7 +46,7 @@ class BuildQueueComponent(BaseComponent):
 
         return None
 
-    def draw(self, screen: pygame.Surface, ui_manager: "UIManager", action_queue: list):
+    def draw(self, screen: pygame.Surface, ui_manager: "UIManager", game_state: "GameState", simulator: "Simulator", action_queue: list):
         build_queue_rect = ui_manager.build_queue_panel_rect
         pygame.draw.rect(screen, C_DARK_GRAY, build_queue_rect, border_radius=8)
         screen.blit(self.font_s.render(f"Building Queue ({len(action_queue)})", True, C_WHITE), (build_queue_rect.x + 20, build_queue_rect.y + 10))
@@ -69,8 +70,17 @@ class BuildQueueComponent(BaseComponent):
             absolute_index = start_index + i
             item_rect = ui_manager.get_build_queue_item_rect(i)
             pygame.draw.rect(screen, C_LIGHT_GRAY, item_rect, border_radius=5)
-            screen.blit(self.font_s.render(f"{absolute_index + 1}. {str(action)}", True, C_BLACK), (item_rect.x + 5, item_rect.y + 2))
-            
+
+            # Calculate remaining time
+            total_time = simulator._get_build_time(action, game_state)
+            remaining_time = max(0, total_time - action.progress)
+            time_str = ui_manager._format_time(remaining_time)
+
+            # Draw item text and remaining time
+            text_str = f"{absolute_index + 1}. {str(action)}"
+            screen.blit(self.font_s.render(text_str, True, C_BLACK), (item_rect.x + 5, item_rect.y + 2))
+            screen.blit(self.font_s.render(time_str, True, C_BLACK), (item_rect.right - 145, item_rect.y + 2))
+
             x_rect = ui_manager.get_build_queue_item_remove_button_rect(i)
             if ui_manager.hovered_remove_button_index == i:
                 pygame.draw.rect(screen, (100, 100, 100), x_rect, border_radius=3)

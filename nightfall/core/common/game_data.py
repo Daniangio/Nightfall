@@ -1,41 +1,40 @@
 from nightfall.core.common.enums import BuildingType, CityTerrainType, UnitType
 from nightfall.core.common.datatypes import Resources
 
-# Central repository for game balance numbers
+# Central repository for game balance numbers. Production values are per hour.
 BUILDING_DATA = {
     BuildingType.CITADEL: {
-        'action_point_cost': 2, # Upgrading the Citadel is expensive
         'production': { # Base resource flow
             1: Resources(food=5, wood=5, iron=2),
             2: Resources(food=7, wood=7, iron=3),
             3: Resources(food=10, wood=10, iron=5),
         },
         'provides': { # Stats provided by the Citadel at each level
-            1: {'max_buildings': 100, 'action_points': 30},
-            2: {'max_buildings': 150, 'action_points': 40},
-            3: {'max_buildings': 200, 'action_points': 50},
+            1: {'max_buildings': 100, },
+            2: {'max_buildings': 150, },
+            3: {'max_buildings': 200, },
         },
         'upgrade': {
             # Level 1 is the starting level, so we define the cost to get to level 2
-            2: {'cost': Resources(food=100, wood=100, iron=50)},
-            3: {'cost': Resources(food=250, wood=250, iron=120)},
+            2: {'cost': Resources(food=100, wood=100, iron=50), 'time': 10},
+            3: {'cost': Resources(food=250, wood=250, iron=120), 'time': 10},
         },
     },
     BuildingType.FARM: {
-        'action_point_cost': 1,
         'build': {
+            'time': 5, # Time in seconds
             'cost': Resources(food=0, wood=50, iron=10),
         },
         'upgrade': {
-            2: {'cost': Resources(food=0, wood=130, iron=40)},
-            3: {'cost': Resources(food=0, wood=180, iron=55)},
-            4: {'cost': Resources(food=0, wood=230, iron=70)},
-            5: {'cost': Resources(food=0, wood=280, iron=85)},
-            6: {'cost': Resources(food=0, wood=330, iron=100)},
-            7: {'cost': Resources(food=0, wood=380, iron=115)},
-            8: {'cost': Resources(food=0, wood=430, iron=130)},
-            9: {'cost': Resources(food=0, wood=480, iron=145)},
-            10: {'cost': Resources(food=0, wood=530, iron=160)},
+            2: {'cost': Resources(food=0, wood=130, iron=40), 'time': 10},
+            3: {'cost': Resources(food=0, wood=180, iron=55), 'time': 10},
+            4: {'cost': Resources(food=0, wood=230, iron=70), 'time': 10},
+            5: {'cost': Resources(food=0, wood=280, iron=85), 'time': 10},
+            6: {'cost': Resources(food=0, wood=330, iron=100), 'time': 10},
+            7: {'cost': Resources(food=0, wood=380, iron=115), 'time': 10},
+            8: {'cost': Resources(food=0, wood=430, iron=130), 'time': 10},
+            9: {'cost': Resources(food=0, wood=480, iron=145), 'time': 10},
+            10: {'cost': Resources(food=0, wood=530, iron=160), 'time': 10},
         },
         'production': {
             1: Resources(food=5, wood=0, iron=0),
@@ -55,20 +54,20 @@ BUILDING_DATA = {
         }
     },
     BuildingType.LUMBER_MILL: {
-        'action_point_cost': 1,
         'build': {
             'cost': Resources(food=0, wood=30, iron=20),
+            'time': 35,
         },
         'upgrade': {
-            2: {'cost': Resources(food=0, wood=90, iron=50)},
-            3: {'cost': Resources(food=0, wood=120, iron=65)},
-            4: {'cost': Resources(food=0, wood=150, iron=80)},
-            5: {'cost': Resources(food=0, wood=180, iron=95)},
-            6: {'cost': Resources(food=0, wood=210, iron=110)},
-            7: {'cost': Resources(food=0, wood=240, iron=125)},
-            8: {'cost': Resources(food=0, wood=270, iron=140)},
-            9: {'cost': Resources(food=0, wood=300, iron=155)},
-            10: {'cost': Resources(food=0, wood=330, iron=170)},
+            2: {'cost': Resources(food=0, wood=90, iron=50), 'time': 10},
+            3: {'cost': Resources(food=0, wood=120, iron=65), 'time': 10},
+            4: {'cost': Resources(food=0, wood=150, iron=80), 'time': 10},
+            5: {'cost': Resources(food=0, wood=180, iron=95), 'time': 10},
+            6: {'cost': Resources(food=0, wood=210, iron=110), 'time': 10},
+            7: {'cost': Resources(food=0, wood=240, iron=125), 'time': 10},
+            8: {'cost': Resources(food=0, wood=270, iron=140), 'time': 10},
+            9: {'cost': Resources(food=0, wood=300, iron=155), 'time': 10},
+            10: {'cost': Resources(food=0, wood=330, iron=170), 'time': 10},
         },
         'production': {
             1: Resources(food=0, wood=5, iron=0),
@@ -87,20 +86,20 @@ BUILDING_DATA = {
         }
     },
     BuildingType.IRON_MINE: {
-        'action_point_cost': 1,
         'build': {
             'cost': Resources(food=0, wood=60, iron=30),
+            'time': 40,
         },
         'upgrade': {
-            2: {'cost': Resources(food=0, wood=150, iron=75)},
-            3: {'cost': Resources(food=0, wood=200, iron=100)},
-            4: {'cost': Resources(food=0, wood=250, iron=125)},
-            5: {'cost': Resources(food=0, wood=300, iron=150)},
-            6: {'cost': Resources(food=0, wood=350, iron=175)},
-            7: {'cost': Resources(food=0, wood=400, iron=200)},
-            8: {'cost': Resources(food=0, wood=450, iron=225)},
-            9: {'cost': Resources(food=0, wood=500, iron=250)},
-            10: {'cost': Resources(food=0, wood=550, iron=275)},
+            2: {'cost': Resources(food=0, wood=150, iron=75), 'time': 10},
+            3: {'cost': Resources(food=0, wood=200, iron=100), 'time': 10},
+            4: {'cost': Resources(food=0, wood=250, iron=125), 'time': 10},
+            5: {'cost': Resources(food=0, wood=300, iron=150), 'time': 10},
+            6: {'cost': Resources(food=0, wood=350, iron=175), 'time': 10},
+            7: {'cost': Resources(food=0, wood=400, iron=200), 'time': 10},
+            8: {'cost': Resources(food=0, wood=450, iron=225), 'time': 10},
+            9: {'cost': Resources(food=0, wood=500, iron=250), 'time': 10},
+            10: {'cost': Resources(food=0, wood=550, iron=275), 'time': 10},
         },
         'production': {
             1: Resources(food=0, wood=0, iron=5),
@@ -119,13 +118,13 @@ BUILDING_DATA = {
         }
     },
     BuildingType.BARRACKS: {
-        'action_point_cost': 1,
         'build': {
             'cost': Resources(food=50, wood=100, iron=80),
+            'time': 60,
         },
         'upgrade': {
-            2: {'cost': Resources(food=0, wood=150, iron=120)},
-            3: {'cost': Resources(food=0, wood=250, iron=200)},
+            2: {'cost': Resources(food=0, wood=150, iron=120), 'time': 10},
+            3: {'cost': Resources(food=0, wood=250, iron=200), 'time': 10},
         },
         # Additive bonus to recruitment speed. 0.1 = +10% speed.
         'recruitment_speed_bonus': {
@@ -140,11 +139,10 @@ BUILDING_DATA = {
 UNIT_DATA = {
     UnitType.SWORDSMAN: {
         'cost': Resources(food=20, wood=5, iron=10),
-        'base_recruit_time': 1.0, # in turns (days) per unit
-        'action_point_cost': 1, # AP cost to start a batch of recruitment
+        'base_recruit_time': 10, # in seconds per unit
     }
 }
 
 # Cost to demolish any building or clear a resource plot
-DEMOLISH_COST_BUILDING = {'cost': Resources(food=10, wood=10, iron=0), 'action_point_cost': 1}
-DEMOLISH_COST_RESOURCE = {'cost': Resources(food=40, wood=40, iron=0), 'action_point_cost': 1}
+DEMOLISH_COST_BUILDING = {'cost': Resources(food=10, wood=10, iron=0), 'time': 15}
+DEMOLISH_COST_RESOURCE = {'cost': Resources(food=40, wood=40, iron=0), 'time': 20}

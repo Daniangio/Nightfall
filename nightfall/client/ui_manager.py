@@ -74,6 +74,7 @@ class UIManager:
         # --- Component-Based UI ---
         self.components = []
         self.side_panel_component = SidePanelComponent(self)
+        # Note: The renderer will call side_panel_component.draw() directly.
         self.components.append(self.side_panel_component)
 
 
@@ -111,7 +112,6 @@ class UIManager:
         self.top_bar_buttons['view_world'] = pygame.Rect(10, 5, 120, 30)
         self.top_bar_buttons['view_city'] = pygame.Rect(140, 5, 120, 30)
         self.buttons['exit_session'] = pygame.Rect(self.side_panel_rect.right - 160, 5, 150, 30)
-        self.buttons['end_day'] = pygame.Rect(self.side_panel_rect.x + (self.side_panel_rect.width - 250) // 2, self.screen_height - 70, 250, 50)
         self.resource_panel_rect = pygame.Rect(self.side_panel_rect.x + 10, 100, self.side_panel_rect.width - 20, 120)
         
         self.update_queue_layouts(action_queue if action_queue is not None else [])
@@ -126,7 +126,7 @@ class UIManager:
         
         # --- Calculate available space for both queues ---
         total_available_y_start = self.resource_panel_rect.bottom + 10
-        total_available_y_end = self.buttons['end_day'].top - 10
+        total_available_y_end = self.screen_height - 10 # End of the panel
         total_available_height = total_available_y_end - total_available_y_start
 
         # --- Determine required height for each queue based on content ---
@@ -239,9 +239,14 @@ class UIManager:
         if cost.wood > 0: parts.append(f"W:{cost.wood}")
         if cost.iron > 0: parts.append(f"I:{cost.iron}")
         return f" ({' '.join(parts)})" if parts else ""
-    
-    def _format_ap_cost(self, ap_cost: int) -> str:
-        return f" [AP:{ap_cost}]"
+
+    def _format_time(self, seconds: float) -> str:
+        """Formats seconds into a string like '[1m 25s]'."""
+        if seconds <= 0: return ""
+        hours = int(seconds // (60 * 60))
+        mins = int(seconds // 60)
+        secs = int(seconds % 60)
+        return f"{hours}h {mins}m {secs}s"
 
     def _get_context_menu_options_data(self, tile, game_state: GameState, city_id: str, action_queue: list, grid_pos: Position):
         """Generates a list of possible actions for a tile."""
@@ -271,20 +276,18 @@ class UIManager:
             next_level = tile.building.level + 1
             building_data = BUILDING_DATA.get(tile.building.type, {})
             upgrade_data = building_data.get('upgrade', {}).get(next_level)
-            ap_cost_upgrade = building_data.get('action_point_cost', 1)
 
             if upgrade_data:
                 cost = upgrade_data.get('cost')
+                time = upgrade_data.get('time')
                 can_afford_res = player_resources.can_afford(cost)
-                can_afford_ap = city.action_points >= ap_cost_upgrade
-                can_upgrade = can_afford_res and can_afford_ap
+                can_upgrade = can_afford_res
                 
                 reason = ""
                 if not can_afford_res: reason = "Not enough resources."
-                elif not can_afford_ap: reason = "Not enough Action Points."
 
                 upgrade_option = {
-                    'text': f"Upgrade (Lvl {next_level}){self._format_cost(cost)}{self._format_ap_cost(ap_cost_upgrade)}",
+                    'text': f"Upgrade (Lvl {next_level}){self._format_cost(cost)}{self._format_time(time)}",
                     'action': 'upgrade',
                     'is_enabled': can_upgrade,
                     'disabled_reason': reason
@@ -302,17 +305,16 @@ class UIManager:
             if tile.building.type != BuildingType.CITADEL:
                 # Demolish action
                 cost = DEMOLISH_COST_BUILDING['cost']
-                ap_cost = DEMOLISH_COST_BUILDING['action_point_cost']
+                time = DEMOLISH_COST_BUILDING['time']
                 can_afford_res = player_resources.can_afford(cost)
-                can_afford_ap = city.action_points >= ap_cost
-                can_demolish = can_afford_res and can_afford_ap
+                can_demolish = can_afford_res
 
                 demolish_option = {
-                    'text': f"Demolish{self._format_cost(cost)}{self._format_ap_cost(ap_cost)}", 
+                    'text': f"Demolish{self._format_cost(cost)}{self._format_time(time)}",
                     'action': 'demolish', 
                     'is_enabled': can_demolish}
                 if not can_demolish:
-                    demolish_option['disabled_reason'] = "Not enough resources." if not can_afford_res else "Not enough Action Points."
+                    demolish_option['disabled_reason'] = "Not enough resources."
                 options.append(demolish_option)
         else: # No building
             if tile.terrain == CityTerrainType.GRASS:
@@ -321,21 +323,19 @@ class UIManager:
                 for b_type in buildable:
                     building_data = BUILDING_DATA.get(b_type, {})
                     build_cost = building_data.get('build', {}).get('cost')
-                    ap_cost = building_data.get('action_point_cost', 1)
+                    build_time = building_data.get('build', {}).get('time')
 
                     can_afford_res = build_cost and player_resources.can_afford(build_cost)
-                    can_afford_ap = city.action_points >= ap_cost
                     has_building_slot = city.num_buildings < city.max_buildings
-                    can_build = can_afford_res and can_afford_ap and has_building_slot
+                    can_build = can_afford_res and has_building_slot
 
                     reason = ""
                     if not has_building_slot: reason = "Building limit reached."
                     elif not can_afford_res: reason = "Not enough resources."
-                    elif not can_afford_ap: reason = "Not enough Action Points."
 
                     building_name = b_type.name.replace('_', ' ').title()
                     build_option = {
-                        'text': f"Build {building_name}{self._format_cost(build_cost)}{self._format_ap_cost(ap_cost)}",
+                        'text': f"Build {building_name}{self._format_cost(build_cost)}{self._format_time(build_time)}",
                         'action': 'build',
                         'building_type': b_type,
                         'is_enabled': can_build,
@@ -346,17 +346,16 @@ class UIManager:
             elif tile.terrain in [CityTerrainType.FOREST_PLOT, CityTerrainType.IRON_DEPOSIT]:
                 # Demolishing plots
                 cost = DEMOLISH_COST_RESOURCE['cost']
-                ap_cost = DEMOLISH_COST_RESOURCE['action_point_cost']
+                time = DEMOLISH_COST_RESOURCE['time']
                 can_afford_res = player_resources.can_afford(cost)
-                can_afford_ap = city.action_points >= ap_cost
-                can_demolish = can_afford_res and can_afford_ap
+                can_demolish = can_afford_res
 
                 demolish_option = {
-                    'text': f"Demolish Plot{self._format_cost(cost)}{self._format_ap_cost(ap_cost)}", 
+                    'text': f"Demolish Plot{self._format_cost(cost)}{self._format_time(time)}",
                     'action': 'demolish', 
                     'is_enabled': can_demolish}
                 if not can_demolish:
-                    demolish_option['disabled_reason'] = "Not enough resources." if not can_afford_res else "Not enough Action Points."
+                    demolish_option['disabled_reason'] = "Not enough resources."
                 options.append(demolish_option)
 
         return options

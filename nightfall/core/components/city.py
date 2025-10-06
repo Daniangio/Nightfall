@@ -127,15 +127,13 @@ class City:
     """Represents a player's city."""
     id: str
     name: str
-    owner_id: str
+    player_id: str
     position: Position # Position on the world map
     city_map: CityMap
     resources: Resources = field(default_factory=Resources)
     build_queue: List[Action] = field(default_factory=list)
     num_buildings: int = 0
     max_buildings: int = 0
-    action_points: int = 0
-    max_action_points: int = 0
     recruitment_queue: List[RecruitmentProgress] = field(default_factory=list)
     garrison: dict = field(default_factory=dict)
 
@@ -158,14 +156,11 @@ class City:
 
         citadel_stats = BUILDING_DATA[BuildingType.CITADEL]['provides'].get(citadel.level, {})
         self.max_buildings = citadel_stats.get('max_buildings', 0)
-        self.max_action_points = citadel_stats.get('action_points', 0)
-        self.action_points = self.max_action_points
 
 
     def deep_copy(self) -> City:
-        new_city = City(self.id, self.name, self.owner_id, self.position, self.city_map.deep_copy())
+        new_city = City(self.id, self.name, self.player_id, self.position, self.city_map.deep_copy())
         new_city.resources = Resources(self.resources.food, self.resources.wood, self.resources.iron)
-        new_city.action_points = self.action_points
         new_city.build_queue = [action.deep_copy() for action in self.build_queue]
         new_city.recruitment_queue = [progress.deep_copy() for progress in self.recruitment_queue]
         new_city.garrison = self.garrison.copy()
@@ -177,13 +172,12 @@ class City:
         return {
             'id': self.id,
             'name': self.name,
-            'owner_id': self.owner_id,
+            'player_id': self.player_id,
             'position': self.position.__dict__,
             'city_map': self.city_map.to_dict(),
             'resources': self.resources.__dict__,
             'build_queue': [action.to_dict() for action in self.build_queue],
             'recruitment_queue': [progress.to_dict() for progress in self.recruitment_queue],
-            'action_points': self.action_points,
             'garrison': {unit_type.name: count for unit_type, count in self.garrison.items()}
         }
 
@@ -193,7 +187,9 @@ class City:
         for action_data in data.get('build_queue', []):
             action_class = action_class_map.get(action_data['action_type'])
             if action_class:
-                queue.append(action_class.from_dict(action_data))
+                action = action_class.from_dict(action_data)
+                action.progress = action_data.get('progress', 0.0)
+                queue.append(action)
         
         recruitment_queue = []
         for progress_data in data.get('recruitment_queue', []):
@@ -202,11 +198,10 @@ class City:
         city = cls(
             id=data['id'],
             name=data['name'],
-            owner_id=data['owner_id'],
+            player_id=data['player_id'],
             position=Position(**data['position']),
             city_map=CityMap.from_dict(data['city_map']),
             resources=Resources(**data['resources']),
-            action_points=data.get('action_points', 0),
             build_queue=queue,
             recruitment_queue=recruitment_queue,
             garrison={UnitType[unit_name]: count for unit_name, count in data.get('garrison', {}).items()}
