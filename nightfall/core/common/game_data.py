@@ -57,7 +57,7 @@ BUILDING_DATA = {
     BuildingType.LUMBER_MILL: {
         'build': {
             'cost': Resources(food=0, wood=30, iron=20),
-            'time': 35,
+            'time': 5,
         },
         'upgrade': {
             2: {'cost': Resources(food=0, wood=90, iron=50), 'time': 10},
@@ -123,7 +123,7 @@ BUILDING_DATA = {
     BuildingType.BARRACKS: {
         'build': {
             'cost': Resources(food=50, wood=100, iron=80),
-            'time': 60,
+            'time': 5,
         },
         'upgrade': {
             2: {'cost': Resources(food=0, wood=150, iron=120), 'time': 10},

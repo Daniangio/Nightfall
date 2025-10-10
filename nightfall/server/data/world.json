@@ -14,7 +14,7 @@
         "id": "city1",
         "name": "Storm's Landing",
         "player_id": "player1",
-        "position": {"x": 1, "y": 1},
+        "position": {"x": 1, "y": 2},
         "city_map_path": "nightfall/server/data/city_layouts/default_city.json",
         "initial_resources": {"food": 2000, "wood": 2000, "iron": 2000}
       }

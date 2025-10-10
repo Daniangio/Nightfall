@@ -1,5 +1,6 @@
 import pygame
 import sys
+from nightfall.client.enums import ActiveView
 from nightfall.core.common.datatypes import Resources
 from nightfall.client.network_client import NetworkClient
 from nightfall.client.renderer import Renderer
@@ -91,6 +92,12 @@ class GameClient:
                 self.ui_manager.clear_lobby_buttons() # Clean up lobby UI state
                 # After receiving a new state, we must re-predict to see the effects of the queue.
                 self._repredict_state()
+                # Center the camera on the appropriate map now that we are in-game.
+                if self.ui_manager.active_view == ActiveView.WORLD_MAP:
+                    self.ui_manager.center_camera_on_map(self.server_state.game_map)
+                elif self.ui_manager.active_view == ActiveView.CITY_VIEW and self.ui_manager.viewed_city_id:
+                    city = self.server_state.cities.get(self.ui_manager.viewed_city_id)
+                    if city: self.ui_manager.center_camera_on_map(city.city_map)
             elif msg_type == "ack":
                 print(f"[CLIENT] Received ACK from server: {payload.get('message')}")
                 self.status_message = payload.get('message', self.status_message)

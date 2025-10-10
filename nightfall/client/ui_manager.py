@@ -1,6 +1,6 @@
 from typing import Optional
 from nightfall.core.common.datatypes import Position
-from nightfall.client.config_ui import FONT_S, FONT_M, TOP_BAR_HEIGHT, SPLITTER_WIDTH, QUEUE_SPACING, MIN_ZOOM, MAX_ZOOM, ZOOM_INCREMENT, TILE_WIDTH, TILE_HEIGHT
+from nightfall.client.config_ui import FONT_S, FONT_M, TOP_BAR_HEIGHT, SPLITTER_WIDTH, QUEUE_SPACING, MIN_ZOOM, MAX_ZOOM, WORLD_TILE_SIZE, ZOOM_INCREMENT, TILE_WIDTH, TILE_HEIGHT
 from nightfall.client.enums import ActiveView
 from nightfall.client.ui.components.panel_component import SidePanelComponent
 
@@ -96,6 +96,28 @@ class UIManager:
 
         # Initial layout calculation
         self.on_resize(self.screen_width, self.screen_height)
+
+    def center_camera_on_map(self, game_map):
+        """Sets the camera offset to center the map in the current view."""
+        if self.active_view == ActiveView.WORLD_MAP:
+            zoom = self.world_zoom_level
+            map_pixel_width = game_map.width * WORLD_TILE_SIZE * zoom
+            map_pixel_height = game_map.height * WORLD_TILE_SIZE * zoom
+            view_center_x = self.main_view_rect.width / 2
+            view_center_y = (self.main_view_rect.height - TOP_BAR_HEIGHT) / 2
+            
+            # To center the map, the camera's top-left should be offset from the map's center
+            # by half the view's size.
+            self.camera_offset = Position(map_pixel_width / 2 - view_center_x, map_pixel_height / 2 - view_center_y)
+
+        elif self.active_view == ActiveView.CITY_VIEW:
+            zoom = self.city_zoom_level
+            map_pixel_width = game_map.width * TILE_WIDTH * zoom
+            map_pixel_height = game_map.height * TILE_HEIGHT * zoom
+            view_center_x = self.main_view_rect.width / 2
+            view_center_y = (self.main_view_rect.height - TOP_BAR_HEIGHT) / 2
+
+            self.city_camera_offset = Position(map_pixel_width / 2 - view_center_x, map_pixel_height / 2 - view_center_y)
 
     def on_resize(self, width: int, height: int, action_queue: Optional[list] = None):
         """Recalculates all UI element positions and sizes based on the new window size."""

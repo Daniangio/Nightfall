@@ -103,20 +103,27 @@ class Renderer:
         # The "Exit to Lobby" button is now drawn as part of the UI Panel.
 
     def draw_world_map(self, game_map, cities, ui_manager):
+        view_rect = ui_manager.main_view_rect
+        camera_offset = ui_manager.camera_offset
         zoom = ui_manager.world_zoom_level
         zoomed_tile_size = WORLD_TILE_SIZE * zoom
 
-        for y in range(game_map.height):
-            for x in range(game_map.width):
+        # Determine the range of tiles visible on screen
+        start_x = int(camera_offset.x / zoomed_tile_size)
+        end_x = int((camera_offset.x + view_rect.width) / zoomed_tile_size) + 1
+        start_y = int((camera_offset.y - TOP_BAR_HEIGHT) / zoomed_tile_size)
+        end_y = int((camera_offset.y - TOP_BAR_HEIGHT + view_rect.height) / zoomed_tile_size) + 1
+
+        for y in range(max(0, start_y), min(game_map.height, end_y)):
+            for x in range(max(0, start_x), min(game_map.width, end_x)):
                 tile = game_map.get_tile(x, y)
-                # EmptyTile has terrain=None, so this check implicitly skips it.
                 if tile and tile.terrain:
                     color = WORLD_TERRAIN_COLORS.get(tile.terrain.name, None)
-                    screen_x = x * zoomed_tile_size - ui_manager.camera_offset.x + ui_manager.main_view_rect.x
-                    screen_y = y * zoomed_tile_size - ui_manager.camera_offset.y + ui_manager.main_view_rect.y + TOP_BAR_HEIGHT
-                    rect = pygame.Rect(screen_x, screen_y, zoomed_tile_size - 1, zoomed_tile_size - 1)
-                    if color: # Don't draw empty tiles
-                        self.screen.fill(color, rect)
+                    screen_x = x * zoomed_tile_size - camera_offset.x
+                    screen_y = y * zoomed_tile_size - camera_offset.y + TOP_BAR_HEIGHT
+                    rect = pygame.Rect(screen_x, screen_y, zoomed_tile_size, zoomed_tile_size)
+                    if color:
+                        pygame.draw.rect(self.screen, color, rect)
         
         for city in cities.values():
             screen_x = city.position.x * zoomed_tile_size - ui_manager.camera_offset.x
@@ -129,6 +136,23 @@ class Renderer:
         self.draw_world_map(game_state.game_map, game_state.cities, ui_manager)
 
     def draw_city_view(self, game_state, city, ui_manager, production, action_queue, simulator):
+        city_map = city.city_map
+        zoom = ui_manager.city_zoom_level
+        camera = ui_manager.city_camera_offset
+
+        # --- 1. Draw Tiled Background ---
+        grass_texture = self.assets.get_image("terrain_grass.png")
+        if grass_texture:
+            # Calculate total map dimensions in pixels
+            map_pixel_width = city_map.width * TILE_WIDTH * zoom
+            map_pixel_height = city_map.height * TILE_HEIGHT * zoom
+
+            # Scale the background to fit the entire map
+            scaled_bg = self.assets.get_image("terrain_grass.png", scale=(int(map_pixel_width), int(map_pixel_height)))
+
+            # Calculate the on-screen position of the background's top-left corner
+            self.screen.blit(scaled_bg, (-camera.x, -camera.y + TOP_BAR_HEIGHT))
+
         city_map = city.city_map
         zoom = ui_manager.city_zoom_level
         zoomed_tile_width = int(TILE_WIDTH * zoom)
@@ -152,15 +176,17 @@ class Renderer:
                 if not tile or tile.terrain.name == 'EMPTY':
                     continue
 
+                # Check if tile is on screen before drawing anything for it
                 tile_rect = ui_manager.get_city_tile_rect(x, y)
+                if not tile_rect.colliderect(ui_manager.main_view_rect):
+                    continue
+
                 tile_pos_obj = Position(x, y)
 
-                # 1. Draw base terrain sprite
-                terrain_sprite_name = f"terrain_{tile.terrain.name.lower()}.png" 
-                terrain_img = self.assets.get_image(terrain_sprite_name, (zoomed_tile_width, zoomed_tile_height))
-                self.screen.blit(terrain_img, tile_rect.topleft)
+                # --- 2. Draw Tile Contours ---
+                pygame.draw.rect(self.screen, C_DARK_GRAY, tile_rect, 1)
 
-                # 2. Draw building or queued action sprite
+                # --- 3. Draw building or queued action sprite ---
                 building_img = None
                 is_ghost = False
 
@@ -178,10 +204,6 @@ class Renderer:
                     # Scale building to be square, based on tile width
                     square_size = zoomed_tile_width
                     scaled_building_img = self.assets.get_image(sprite_name, scale=(square_size, square_size))
-                    if building_img.get_alpha(): # If original has alpha, use it for the key
-                        scaled_building_img = self.assets.get_image(building_img.get_alpha(), scale=(square_size, square_size))
-                    else: # Fallback for images without alpha
-                        scaled_building_img = pygame.transform.smoothscale(building_img, (square_size, square_size))
 
                     # Center the square building on the rectangular tile
                     building_rect = scaled_building_img.get_rect(center=tile_rect.center)
@@ -195,7 +217,7 @@ class Renderer:
                     else:
                         self.screen.blit(scaled_building_img, building_rect)
 
-                # 3. Draw demolish/upgrade indicators on top
+                # --- 4. Draw demolish/upgrade indicators on top ---
                 if tile_pos_obj in queued_actions:
                     action = queued_actions[tile_pos_obj]
                     zoomed_upgrade_surface = pygame.transform.scale(self.upgrade_surface, (zoomed_tile_width, zoomed_tile_height))

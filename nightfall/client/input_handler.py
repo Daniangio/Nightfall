@@ -146,12 +146,14 @@ class InputHandler:
                 map_pixel_height = game_map.height * WORLD_TILE_SIZE * zoom
 
                 # Calculate camera offset limits to keep map center within view
-                min_x = (map_pixel_width - view_rect.width) / 2
-                max_x = (map_pixel_width + view_rect.width) / 2
-                min_y = (map_pixel_height - (view_rect.height - TOP_BAR_HEIGHT)) / 2
-                max_y = (map_pixel_height + (view_rect.height - TOP_BAR_HEIGHT)) / 2
-                clamped_x = max(min_x, min(new_x, max_x))
-                clamped_y = max(min_y, min(new_y, max_y))
+                # The camera offset represents the world coordinate at the top-left of the screen.
+                # We want to keep the map's center within half a screen of the view's center.
+                map_center_x, map_center_y = map_pixel_width / 2, map_pixel_height / 2
+                view_center_allowance_x = view_rect.width / 2
+                view_center_allowance_y = (view_rect.height - TOP_BAR_HEIGHT) / 2
+
+                clamped_x = max(map_center_x - view_center_allowance_x, min(new_x, map_center_x + view_center_allowance_x))
+                clamped_y = max(map_center_y - view_center_allowance_y, min(new_y, map_center_y + view_center_allowance_y))
                 self.ui_manager.camera_offset = Position(clamped_x, clamped_y)
             elif self.ui_manager.active_view == ActiveView.CITY_VIEW:
                 city_id = self.ui_manager.viewed_city_id
@@ -165,12 +167,13 @@ class InputHandler:
                     map_pixel_height = city_map.height * TILE_HEIGHT * zoom
                     
                     # Calculate camera offset limits to keep map center within view
-                    min_x = (map_pixel_width - view_rect.width) / 2
-                    max_x = (map_pixel_width + view_rect.width) / 2
-                    min_y = (map_pixel_height - (view_rect.height - TOP_BAR_HEIGHT)) / 2
-                    max_y = (map_pixel_height + (view_rect.height - TOP_BAR_HEIGHT)) / 2
-                    clamped_x = max(min_x, min(new_x, max_x))
-                    clamped_y = max(min_y, min(new_y, max_y))
+                    min_offset_x = -view_rect.width / 2
+                    max_offset_x = map_pixel_width - view_rect.width / 2
+                    min_offset_y = -(view_rect.height - TOP_BAR_HEIGHT) / 2
+                    max_offset_y = map_pixel_height - (view_rect.height - TOP_BAR_HEIGHT) / 2
+
+                    clamped_x = max(min_offset_x, min(new_x, max_offset_x))
+                    clamped_y = max(min_offset_y, min(new_y, max_offset_y))
                     self.ui_manager.city_camera_offset = Position(clamped_x, clamped_y)
 
     def _handle_mouse_wheel(self, direction: int, mouse_pos: tuple[int, int]):
@@ -227,9 +230,12 @@ class InputHandler:
             if rect.collidepoint(mouse_pos):
                 if name == "view_world":
                     self.ui_manager.active_view = ActiveView.WORLD_MAP
+                    self.ui_manager.center_camera_on_map(state.game_map)
                     self.ui_manager.clear_selection()
                 elif name == "view_city" and self.ui_manager.viewed_city_id:
+                    self.ui_manager.active_view = ActiveView.WORLD_MAP
                     self.ui_manager.active_view = ActiveView.CITY_VIEW
+                    self.ui_manager.center_camera_on_map(state.cities[self.ui_manager.viewed_city_id].city_map)
                 return None # View changed, no server action needed.
 
         # 3. Handle view-specific clicks
@@ -262,6 +268,7 @@ class InputHandler:
             if clicked_pos == self.last_click_pos and current_time - self.last_click_time < 500:
                 print(f"[CLIENT] Double-clicked on city: {clicked_city.name}. Switching to city view.")
                 self.ui_manager.active_view = ActiveView.CITY_VIEW
+                self.ui_manager.center_camera_on_map(clicked_city.city_map)
                 self.last_click_pos = None # Reset double-click state
             else: # Single click
                 print(f"[CLIENT] Selected city: {clicked_city.name}.")
