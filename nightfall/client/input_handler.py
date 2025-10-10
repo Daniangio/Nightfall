@@ -1,5 +1,6 @@
 from typing import Optional
 import pygame
+from nightfall.client.config_ui import TOP_BAR_HEIGHT
 from nightfall.client.enums import ActiveView
 from nightfall.client.ui_manager import UIManager
 from nightfall.core.common.datatypes import Position
@@ -137,11 +138,20 @@ class InputHandler:
             new_y = start_offset.y - dy
 
             if self.ui_manager.active_view == ActiveView.WORLD_MAP:
+                zoom = self.ui_manager.world_zoom_level
                 game_map = self.ui_manager.game_state_for_input.game_map
-                max_x = game_map.width * WORLD_TILE_SIZE - self.ui_manager.main_view_rect.width
-                max_y = game_map.height * WORLD_TILE_SIZE - (self.ui_manager.main_view_rect.height - self.ui_manager.top_bar_rect.height)
-                clamped_x = max(0, min(new_x, max_x))
-                clamped_y = max(0, min(new_y, max_y))
+                view_rect = self.ui_manager.main_view_rect
+
+                map_pixel_width = game_map.width * WORLD_TILE_SIZE * zoom
+                map_pixel_height = game_map.height * WORLD_TILE_SIZE * zoom
+
+                # Calculate camera offset limits to keep map center within view
+                min_x = (map_pixel_width - view_rect.width) / 2
+                max_x = (map_pixel_width + view_rect.width) / 2
+                min_y = (map_pixel_height - (view_rect.height - TOP_BAR_HEIGHT)) / 2
+                max_y = (map_pixel_height + (view_rect.height - TOP_BAR_HEIGHT)) / 2
+                clamped_x = max(min_x, min(new_x, max_x))
+                clamped_y = max(min_y, min(new_y, max_y))
                 self.ui_manager.camera_offset = Position(clamped_x, clamped_y)
             elif self.ui_manager.active_view == ActiveView.CITY_VIEW:
                 city_id = self.ui_manager.viewed_city_id
@@ -149,13 +159,18 @@ class InputHandler:
                 if city: # Clamp dragging to city map boundaries
                     city_map = city.city_map
                     zoom = self.ui_manager.city_zoom_level
+                    view_rect = self.ui_manager.main_view_rect
+
                     map_pixel_width = city_map.width * TILE_WIDTH * zoom
                     map_pixel_height = city_map.height * TILE_HEIGHT * zoom
                     
-                    max_x = max(0, map_pixel_width - self.ui_manager.main_view_rect.width)
-                    max_y = max(0, map_pixel_height - (self.ui_manager.main_view_rect.height - self.ui_manager.top_bar_rect.height))
-                    clamped_x = max(0, min(new_x, max_x))
-                    clamped_y = max(0, min(new_y, max_y))
+                    # Calculate camera offset limits to keep map center within view
+                    min_x = (map_pixel_width - view_rect.width) / 2
+                    max_x = (map_pixel_width + view_rect.width) / 2
+                    min_y = (map_pixel_height - (view_rect.height - TOP_BAR_HEIGHT)) / 2
+                    max_y = (map_pixel_height + (view_rect.height - TOP_BAR_HEIGHT)) / 2
+                    clamped_x = max(min_x, min(new_x, max_x))
+                    clamped_y = max(min_y, min(new_y, max_y))
                     self.ui_manager.city_camera_offset = Position(clamped_x, clamped_y)
 
     def _handle_mouse_wheel(self, direction: int, mouse_pos: tuple[int, int]):

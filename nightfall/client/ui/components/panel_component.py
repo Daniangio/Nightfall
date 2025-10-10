@@ -166,6 +166,11 @@ class SidePanelComponent(BaseComponent):
                         action = DemolishAction(
                             player_id=city.player_id, city_id=city.id, position=selected_pos
                         )
+                    elif action_name == 'cancel':
+                        # Find the index of the action in the city's build queue
+                        action_index = next((i for i, a in enumerate(city.build_queue) if hasattr(a, 'position') and a.position == selected_pos), -1)
+                        if action_index != -1:
+                            return {"type": "remove_action", "index": action_index}
                     
                     if action:
                         # After creating an action, clear the selection and return to default view
@@ -349,80 +354,152 @@ class SidePanelComponent(BaseComponent):
                 screen.blit(next_prod_surf, (panel_rect.x + 15, y_pos))
                 y_pos += 25
 
+        # --- Draw Bonus Breakdown ---
+        bonus_breakdown = self._get_bonus_breakdown(hypothetical_building, selected_pos, city.city_map)
+        if bonus_breakdown:
+            bonus_title_surf = self.font_s.render("Adjacency Bonuses:", True, C_YELLOW)
+            screen.blit(bonus_title_surf, (panel_rect.x + 15, y_pos))
+            y_pos += 25
+            for line in bonus_breakdown:
+                line_surf = self.font_s.render(f"  {line}", True, C_WHITE)
+                screen.blit(line_surf, (panel_rect.x + 15, y_pos))
+                y_pos += 20
+
 
         # Draw Build Button
         self._draw_action_buttons(screen, city, game_state, 'build', b_type=b_type)
 
-    def _draw_existing_building_view(self, screen: pygame.Surface, city, game_state: "GameState", simulator: "Simulator"):
+    def _get_bonus_breakdown(self, building: Building, position: "Position", city_map: "CityMap") -> list[str]:
+        """Generates a list of strings describing each adjacency bonus source."""
+        breakdown = []
+        building_data = BUILDING_DATA.get(building.type, {})
+        adjacency_rules = building_data.get('adjacency_bonus', {})
+        if not adjacency_rules:
+            return []
+
+        for neighbor_pos in city_map.get_neighbors(position.x, position.y):
+            neighbor_tile = city_map.get_tile(neighbor_pos.x, neighbor_pos.y)
+            if not neighbor_tile:
+                continue
+
+            # Check for terrain bonus
+            if neighbor_tile.terrain.name in adjacency_rules:
+                bonus = adjacency_rules[neighbor_tile.terrain.name]
+                breakdown.append(f"+{int(bonus*100)}% from {neighbor_tile.terrain.name.replace('_', ' ').title()}")
+            # Check for building bonus
+            if neighbor_tile.building and neighbor_tile.building.type.name in adjacency_rules:
+                bonus = adjacency_rules[neighbor_tile.building.type.name]
+                breakdown.append(f"+{int(bonus*100)}% from {neighbor_tile.building.type.name.replace('_', ' ').title()}")
+        return breakdown
+
+    def _draw_existing_building_view(self, screen: pygame.Surface, city: "City", game_state: "GameState", simulator: "Simulator"):
         """Draws details for a building that is already on a tile."""
         selected_pos = self.ui_manager.selected_city_tile
         if not selected_pos: return
-        tile = city.city_map.get_tile(selected_pos.x, selected_pos.y)
-        if not tile or not tile.building: return
 
-        building = tile.building
-        building_name = f"{building.type.name.replace('_', ' ').title()} (Lvl {building.level})"
+        # Check if an action is queued for this tile
+        queued_action = next((a for a in city.build_queue if hasattr(a, 'position') and a.position == selected_pos), None)
+
+        # If an action is queued, we might need to display info about a building that doesn't exist yet.
+        if queued_action and isinstance(queued_action, BuildBuildingAction):
+            building = Building(queued_action.building_type, 0) # Treat as level 0, will be 1 on completion
+        else: # Existing building or a queued action on an existing building (upgrade/demolish)
+            tile = city.city_map.get_tile(selected_pos.x, selected_pos.y)
+            # If there's a queued action but no building (i.e., demolishing a resource plot),
+            # we can't proceed with drawing building details, but we still need to draw the cancel button.
+            if not tile or (not tile.building and not queued_action): return
+            building = tile.building
+
+        building_level_text = f" (Lvl {building.level})" if building and building.level > 0 else ""
+        building_name_str = building.type.name.replace('_', ' ').title() if building else "Action in Progress"
+        building_name = f"{building_name_str}{building_level_text}"
         self._draw_detail_panel_header(screen, building_name)
+
+        tile = city.city_map.get_tile(selected_pos.x, selected_pos.y)
 
         panel_rect = self.ui_manager.side_panel_rect
         y_pos = 100
 
         # --- Draw Description ---
-        building_data = BUILDING_DATA.get(building.type, {})
-        description = building_data.get('description', 'No description available.')
-        desc_surf = self.font_s.render(description, True, C_WHITE)
-        screen.blit(desc_surf, (panel_rect.x + 15, y_pos))
-        y_pos += 40
+        if building:
+            building_data = BUILDING_DATA.get(building.type, {})
+            description = building_data.get('description', 'No description available.')
+            desc_surf = self.font_s.render(description, True, C_WHITE)
+            screen.blit(desc_surf, (panel_rect.x + 15, y_pos))
+            y_pos += 40
 
-        # --- Draw Current Production Info ---
-        production = simulator.calculate_building_production(building, selected_pos, city.city_map)
-        if production.food > 0 or production.wood > 0 or production.iron > 0:
-            prod_title_surf = self.font_s.render("Current Production:", True, C_YELLOW)
-            screen.blit(prod_title_surf, (panel_rect.x + 15, y_pos))
-            y_pos += 25
-            
-            prod_text = f"  Food: {production.food}/hr, Wood: {production.wood}/hr, Iron: {production.iron}/hr"
-            prod_surf = self.font_s.render(prod_text, True, C_WHITE)
-            screen.blit(prod_surf, (panel_rect.x + 15, y_pos))
-            y_pos += 25
-
-        # --- Draw Next Level Production Info ---
-        next_level = building.level + 1
-        next_level_data = building_data.get('upgrade', {}).get(next_level, {})
-        if next_level_data:
-            hypothetical_building_next = Building(building.type, next_level)
-            next_production = simulator.calculate_building_production(hypothetical_building_next, selected_pos, city.city_map)
-            
-            if next_production.food > 0 or next_production.wood > 0 or next_production.iron > 0:
-                next_prod_title_surf = self.font_s.render(f"Production at Lvl {next_level}:", True, C_LIGHT_GRAY)
-                screen.blit(next_prod_title_surf, (panel_rect.x + 15, y_pos))
+            # --- Draw Current Production Info ---
+            production = simulator.calculate_building_production(building, selected_pos, city.city_map)
+            if production.food > 0 or production.wood > 0 or production.iron > 0:
+                prod_title_surf = self.font_s.render("Current Production:", True, C_YELLOW)
+                screen.blit(prod_title_surf, (panel_rect.x + 15, y_pos))
+                y_pos += 25
+                
+                prod_text = f"  Food: {production.food}/hr, Wood: {production.wood}/hr, Iron: {production.iron}/hr"
+                prod_surf = self.font_s.render(prod_text, True, C_WHITE)
+                screen.blit(prod_surf, (panel_rect.x + 15, y_pos))
                 y_pos += 25
 
-                next_prod_text = f"  Food: {next_production.food}/hr, Wood: {next_production.wood}/hr, Iron: {next_production.iron}/hr"
-                next_prod_surf = self.font_s.render(next_prod_text, True, C_LIGHT_GRAY)
-                screen.blit(next_prod_surf, (panel_rect.x + 15, y_pos))
+            # --- Draw Next Level Production Info ---
+            next_level = building.level + 1
+            next_level_data = building_data.get('upgrade', {}).get(next_level, {})
+            if next_level_data:
+                hypothetical_building_next = Building(building.type, next_level)
+                next_production = simulator.calculate_building_production(hypothetical_building_next, selected_pos, city.city_map)
+                
+                if next_production.food > 0 or next_production.wood > 0 or next_production.iron > 0:
+                    next_prod_title_surf = self.font_s.render(f"Production at Lvl {next_level}:", True, C_LIGHT_GRAY)
+                    screen.blit(next_prod_title_surf, (panel_rect.x + 15, y_pos))
+                    y_pos += 25
+
+                    next_prod_text = f"  Food: {next_production.food}/hr, Wood: {next_production.wood}/hr, Iron: {next_production.iron}/hr"
+                    next_prod_surf = self.font_s.render(next_prod_text, True, C_LIGHT_GRAY)
+                    screen.blit(next_prod_surf, (panel_rect.x + 15, y_pos))
+                    y_pos += 25
+            else:
+                max_lvl_surf = self.font_s.render("Max level reached.", True, C_YELLOW)
+                screen.blit(max_lvl_surf, (panel_rect.x + 15, y_pos))
                 y_pos += 25
+
+            # --- Draw Bonus Breakdown ---
+            bonus_breakdown = self._get_bonus_breakdown(building, selected_pos, city.city_map)
+            if bonus_breakdown:
+                bonus_title_surf = self.font_s.render("Adjacency Bonuses:", True, C_YELLOW)
+                screen.blit(bonus_title_surf, (panel_rect.x + 15, y_pos))
+                y_pos += 25
+                for line in bonus_breakdown:
+                    line_surf = self.font_s.render(f"  {line}", True, C_WHITE)
+                    screen.blit(line_surf, (panel_rect.x + 15, y_pos))
+                    y_pos += 20
+
+        if queued_action:
+            # If an action is in the queue, only show the Cancel button
+            self._draw_action_buttons(screen, city, game_state, 'cancel')
         else:
-            max_lvl_surf = self.font_s.render("Max level reached.", True, C_YELLOW)
-            screen.blit(max_lvl_surf, (panel_rect.x + 15, y_pos))
-            y_pos += 25
-
-        # Draw Upgrade and Demolish Buttons
-        self._draw_action_buttons(screen, city, game_state, 'upgrade', building=building)
-        self._draw_action_buttons(screen, city, game_state, 'demolish', building=building)
+            # Otherwise, show standard action buttons
+            self._draw_action_buttons(screen, city, game_state, 'upgrade', building=building)
+            if building and building.type != BuildingType.CITADEL:
+                self._draw_action_buttons(screen, city, game_state, 'demolish', building=building)
 
     def _draw_resource_plot_view(self, screen: pygame.Surface, city):
         """Draws details for a resource plot like a forest or iron deposit."""
         selected_pos = self.ui_manager.selected_city_tile
         if not selected_pos: return
+
+        queued_action = next((a for a in city.build_queue if hasattr(a, 'position') and a.position == selected_pos), None)
+
         tile = city.city_map.get_tile(selected_pos.x, selected_pos.y)
         if not tile: return
 
         plot_name = tile.terrain.name.replace('_', ' ').title()
         self._draw_detail_panel_header(screen, plot_name)
 
-        # Draw Demolish Button
-        self._draw_action_buttons(screen, city, None, 'demolish_plot')
+        if queued_action:
+            # If a demolish action is queued, show the Cancel button
+            self._draw_action_buttons(screen, city, None, 'cancel')
+        else:
+            # Otherwise, show the Demolish button
+            self._draw_action_buttons(screen, city, None, 'demolish_plot')
 
     def _draw_terrain_details_view(self, screen: pygame.Surface, city):
         """Draws details for a non-interactive terrain tile like water."""
@@ -489,6 +566,9 @@ class SidePanelComponent(BaseComponent):
         elif action_type == 'demolish_plot':
             is_enabled = city.resources.can_afford(DEMOLISH_COST_RESOURCE['cost'])
             text = "Clear Plot"
+        elif action_type == 'cancel':
+            is_enabled = True # Always possible to cancel
+            text = "Cancel Action"
 
         # Draw the button
         is_hovered = button_rect.collidepoint(mouse_pos)

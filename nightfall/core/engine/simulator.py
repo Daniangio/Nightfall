@@ -190,9 +190,16 @@ class Simulator:
         if 'adjacency_bonus' in building_data:
             for neighbor_pos in city_map.get_neighbors(position.x, position.y):
                 neighbor_tile = city_map.get_tile(neighbor_pos.x, neighbor_pos.y)
-                if neighbor_tile and neighbor_tile.terrain.name in building_data['adjacency_bonus']:
+                if not neighbor_tile:
+                    continue
+                
+                # Check for terrain-based bonus
+                if neighbor_tile.terrain.name in building_data['adjacency_bonus']:
                     adjacency_bonus_multiplier += building_data['adjacency_bonus'][neighbor_tile.terrain.name]
-
+                
+                # Check for building-based bonus
+                if neighbor_tile.building and neighbor_tile.building.type.name in building_data['adjacency_bonus']:
+                    adjacency_bonus_multiplier += building_data['adjacency_bonus'][neighbor_tile.building.type.name]
         return Resources(
             food=round(base_prod.food * adjacency_bonus_multiplier),
             wood=round(base_prod.wood * adjacency_bonus_multiplier),

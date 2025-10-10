@@ -51,6 +51,7 @@ BUILDING_DATA = {
         'adjacency_bonus': {
             CityTerrainType.WATER.name: 0.25, # +25% production for each adjacent Water tile
             CityTerrainType.GRASS.name: 0.05, # +5% production for each adjacent Grass tile
+            BuildingType.BUILDERS_HUT.name: 0.10, # +10% production for each adjacent Builder's Hut
         }
     },
     BuildingType.LUMBER_MILL: {
@@ -83,6 +84,7 @@ BUILDING_DATA = {
         },
         'adjacency_bonus': {
             CityTerrainType.FOREST_PLOT.name: 0.20, # +20% production for each adjacent Forest Plot
+            BuildingType.BUILDERS_HUT.name: 0.10, # +10% production for each adjacent Builder's Hut
         }
     },
     BuildingType.IRON_MINE: {
@@ -115,6 +117,7 @@ BUILDING_DATA = {
         },
         'adjacency_bonus': {
             CityTerrainType.IRON_DEPOSIT.name: 0.20, # +20% production for each adjacent Iron Deposit
+            BuildingType.BUILDERS_HUT.name: 0.10, # +10% production for each adjacent Builder's Hut
         }
     },
     BuildingType.BARRACKS: {
