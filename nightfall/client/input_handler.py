@@ -160,7 +160,7 @@ class InputHandler:
             if rect.collidepoint(mouse_pos):
                 if name == "view_world":
                     self.ui_manager.active_view = ActiveView.WORLD_MAP
-                    self.ui_manager.clear_context_menu()
+                    self.ui_manager.clear_selection()
                 elif name == "view_city" and self.ui_manager.viewed_city_id:
                     self.ui_manager.active_view = ActiveView.CITY_VIEW
                 return None # View changed, no server action needed.
@@ -204,87 +204,20 @@ class InputHandler:
 
     def _handle_city_view_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
         """Handles clicks when in the City View."""
-        # Check for clicks on various UI elements within the city view
-        if self.ui_manager.context_menu and self.ui_manager.context_menu['rect'].collidepoint(mouse_pos):
-            return self._handle_context_menu_click(mouse_pos, state, action_queue)
-
-        # Note: We don't have remove buttons for the unit queue yet, so no input handling is needed there.
-
+        # All side panel clicks are now handled by the SidePanelComponent.
+        # This method now only cares about clicks on the city grid itself.
         grid_pos = self.ui_manager.screen_to_grid(mouse_pos)
         if grid_pos:
-            # Use the currently viewed city ID
-            self._handle_city_tile_click(grid_pos, state, self.ui_manager.viewed_city_id, action_queue)
-
+            self._handle_city_tile_click(grid_pos, state, self.ui_manager.viewed_city_id)
         return None
 
-    def _handle_city_tile_click(self, grid_pos: Position, state: GameState, city_id: str, action_queue: list):
-        """Sets the context menu based on a click on a city tile."""
+    def _handle_city_tile_click(self, grid_pos: Position, state: GameState, city_id: str):
+        """Handles a click on a city tile by updating the UI manager's selection."""
         city = state.cities.get(city_id)
         if not city: return
 
         tile = city.city_map.get_tile(grid_pos.x, grid_pos.y)
         if tile:
-            self.ui_manager.set_context_menu_for_tile(grid_pos, tile, state, city_id, city.build_queue)
-
-    def _handle_context_menu_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
-        """Handles a click within an active context menu."""
-        from nightfall.core.actions.city_actions import (
-            BuildBuildingAction, UpgradeBuildingAction, DemolishAction
-        )
-        selected_pos = self.ui_manager.context_menu['position']
-        
-        for option in self.ui_manager.context_menu['options']:
-            if option['rect'].collidepoint(mouse_pos):
-                # If the action is disabled, do nothing but close the menu.
-                if not option['is_enabled']:
-                    print(f"[CLIENT] Action disabled: {option.get('disabled_reason', 'Not enough resources.')}")
-                    self.ui_manager.clear_context_menu()
-                    return None
-
-                action_type = option['action']
-
-                # Handle cancellation first, as it's a special case that bypasses the queue check.
-                if action_type == 'cancel_action':
-                    self.ui_manager.clear_context_menu()
-                    return {"type": "remove_action", "index": option['action_index']}
-
-                # --- Action Queue Validation ---
-                is_tile_in_queue = any(hasattr(a, 'position') and a.position == selected_pos for a in action_queue)
-                if is_tile_in_queue:
-                    print("[CLIENT] Action failed: An action for this tile is already in the queue.")
-                    self.ui_manager.clear_context_menu()
-                    return None
-                # --- End Validation ---
-
-                action = None
-                
-                if action_type == 'build':
-                    action = BuildBuildingAction(
-                        player_id=self.player_id,
-                        city_id=self.city_id,
-                        position=selected_pos,
-                        building_type=option['building_type']
-                    )
-                elif action_type == 'upgrade':
-                    action = UpgradeBuildingAction(
-                        player_id=self.player_id,
-                        city_id=self.city_id,
-                        position=selected_pos
-                    )
-                elif action_type == 'demolish':
-                    action = DemolishAction(
-                        player_id=self.player_id,
-                        city_id=self.city_id,
-                        position=selected_pos
-                    )
-                
-                self.ui_manager.clear_context_menu()
-                if action:
-                    # When adding to the local queue, we add the object.
-                    # When sending to the server, we'll call .to_dict() on it.
-                    # The to_dict method now correctly includes player/city IDs.
-                    return {"type": "add_action", "action": action}
-        
-        # If the click was inside the menu but not on a button, just close it
-        self.ui_manager.clear_context_menu()
-        return None
+            # Simply select the tile. The SidePanelComponent will observe this
+            # and change its view accordingly.
+            self.ui_manager.selected_city_tile = grid_pos

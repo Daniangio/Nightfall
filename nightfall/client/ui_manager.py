@@ -24,7 +24,6 @@ class UIManager:
     """
     def __init__(self):
         self.selected_city_tile: Optional[Position] = None
-        self.context_menu: Optional[dict] = None
         
         # UI State
         self.active_view = ActiveView.WORLD_MAP
@@ -190,179 +189,11 @@ class UIManager:
         from nightfall.client.renderer import CITY_TILE_SIZE
         return pygame.Rect(x * CITY_TILE_SIZE - self.city_camera_offset.x, y * CITY_TILE_SIZE - self.city_camera_offset.y + TOP_BAR_HEIGHT, CITY_TILE_SIZE, CITY_TILE_SIZE)
 
-    def get_context_menu_pos(self, item_index=0):
-        if not self.selected_city_tile: return (0,0)
-        from nightfall.client.renderer import CITY_TILE_SIZE
-        base_pos = ( (self.selected_city_tile.x + 1) * CITY_TILE_SIZE - self.city_camera_offset.x + 5, self.selected_city_tile.y * CITY_TILE_SIZE - self.city_camera_offset.y + TOP_BAR_HEIGHT )
-        return (base_pos[0], base_pos[1] + item_index * 45)
-
-    def set_context_menu_for_tile(self, grid_pos: Position, tile, game_state: GameState, city_id: str, action_queue: list):
-        """Sets the state for the context menu based on the selected tile."""
-        self.selected_city_tile = grid_pos
-        options_data = self._get_context_menu_options_data(tile, game_state, city_id, action_queue, grid_pos)
-
-        if not options_data:
-            self.clear_context_menu()
-            return
-
-        menu_options = []
-        padding_x = 20  # 10px on each side
-        item_height = 40
-
-        for i, data in enumerate(options_data):
-            text_width, _ = self.font_s.size(data['text'])
-            item_width = text_width + padding_x
-            menu_options.append({
-                'text': data['text'],
-                'rect': pygame.Rect(self.get_context_menu_pos(i), (item_width, item_height)),
-                'action': data['action'],
-                'building_type': data.get('building_type'),
-                'is_enabled': data.get('is_enabled', True),
-                'disabled_reason': data.get('disabled_reason'),
-                'action_index': data.get('action_index') # Pass the index for cancel actions
-            })
-        
-        # Calculate the full bounding rect for the menu
-        full_rect = menu_options[0]['rect'].unionall([opt['rect'] for opt in menu_options])
-
-        self.context_menu = {
-            'position': grid_pos,
-            'rect': full_rect,
-            'options': menu_options
-        }
-
-    def clear_context_menu(self):
-        self.context_menu = None
+    def clear_selection(self):
+        """Clears the selected tile and resets the side panel view."""
         self.selected_city_tile = None
-
-    def _format_cost(self, cost: Optional[Position]) -> str:
-        """Formats a Resources object into a string like '(F:10 W:20 I:5)'."""
-        if not cost: return ""
-        parts = []
-        if cost.food > 0: parts.append(f"F:{cost.food}")
-        if cost.wood > 0: parts.append(f"W:{cost.wood}")
-        if cost.iron > 0: parts.append(f"I:{cost.iron}")
-        return f" ({' '.join(parts)})" if parts else ""
-
-    def _format_time(self, seconds: float) -> str:
-        """Formats seconds into a string like '[1m 25s]'."""
-        if seconds <= 0: return ""
-        hours = int(seconds // (60 * 60))
-        mins = int(seconds // 60)
-        secs = int(seconds % 60)
-        return f"{hours}h {mins}m {secs}s"
-
-    def _get_context_menu_options_data(self, tile, game_state: GameState, city_id: str, action_queue: list, grid_pos: Position):
-        """Generates a list of possible actions for a tile."""
-        options = []
-        city = game_state.cities[city_id]
-        player_resources = city.resources
-
-        # Check if an action is already queued for this tile and find its index
-        action_index_in_queue = -1
-        for i, action in enumerate(action_queue):
-            if hasattr(action, 'position') and action.position == grid_pos:
-                action_index_in_queue = i
-                break
-
-        if action_index_in_queue != -1:
-            # If an action is queued, the only option is to cancel it.
-            return [{
-                'text': "Cancel Queued Action",
-                'action': 'cancel_action',
-                'is_enabled': True,
-                'action_index': action_index_in_queue,
-                'disabled_reason': None
-            }]
-
-        if tile.building:
-            # --- Upgrade Action (for all buildings including Citadel) ---
-            next_level = tile.building.level + 1
-            building_data = BUILDING_DATA.get(tile.building.type, {})
-            upgrade_data = building_data.get('upgrade', {}).get(next_level)
-
-            if upgrade_data:
-                cost = upgrade_data.get('cost')
-                time = upgrade_data.get('time')
-                can_afford_res = player_resources.can_afford(cost)
-                can_upgrade = can_afford_res
-                
-                reason = ""
-                if not can_afford_res: reason = "Not enough resources."
-
-                upgrade_option = {
-                    'text': f"Upgrade (Lvl {next_level}){self._format_cost(cost)}{self._format_time(time)}",
-                    'action': 'upgrade',
-                    'is_enabled': can_upgrade,
-                    'disabled_reason': reason
-                }
-                options.append(upgrade_option)
-            else: # Max level reached
-                options.append({
-                    'text': "Upgrade (Max Level)",
-                    'action': 'upgrade',
-                    'is_enabled': False,
-                    'disabled_reason': "This building has reached its maximum level."
-                })
-
-            # --- Demolish Action (not for Citadel) ---
-            if tile.building.type != BuildingType.CITADEL:
-                # Demolish action
-                cost = DEMOLISH_COST_BUILDING['cost']
-                time = DEMOLISH_COST_BUILDING['time']
-                can_afford_res = player_resources.can_afford(cost)
-                can_demolish = can_afford_res
-
-                demolish_option = {
-                    'text': f"Demolish{self._format_cost(cost)}{self._format_time(time)}",
-                    'action': 'demolish', 
-                    'is_enabled': can_demolish}
-                if not can_demolish:
-                    demolish_option['disabled_reason'] = "Not enough resources."
-                options.append(demolish_option)
-        else: # No building
-            if tile.terrain == CityTerrainType.GRASS:
-                # Any production building can be built on grass
-                buildable = [BuildingType.FARM, BuildingType.LUMBER_MILL, BuildingType.IRON_MINE, BuildingType.BARRACKS, BuildingType.WAREHOUSE, BuildingType.BUILDERS_HUT]
-                for b_type in buildable:
-                    building_data = BUILDING_DATA.get(b_type, {})
-                    build_cost = building_data.get('build', {}).get('cost')
-                    build_time = building_data.get('build', {}).get('time')
-
-                    can_afford_res = build_cost and player_resources.can_afford(build_cost)
-                    has_building_slot = city.num_buildings < city.max_buildings
-                    can_build = can_afford_res and has_building_slot
-
-                    reason = ""
-                    if not has_building_slot: reason = "Building limit reached."
-                    elif not can_afford_res: reason = "Not enough resources."
-
-                    building_name = b_type.name.replace('_', ' ').title()
-                    build_option = {
-                        'text': f"Build {building_name}{self._format_cost(build_cost)}{self._format_time(build_time)}",
-                        'action': 'build',
-                        'building_type': b_type,
-                        'is_enabled': can_build,
-                        'disabled_reason': reason
-                    }
-                    options.append(build_option)
-
-            elif tile.terrain in [CityTerrainType.FOREST_PLOT, CityTerrainType.IRON_DEPOSIT]:
-                # Demolishing plots
-                cost = DEMOLISH_COST_RESOURCE['cost']
-                time = DEMOLISH_COST_RESOURCE['time']
-                can_afford_res = player_resources.can_afford(cost)
-                can_demolish = can_afford_res
-
-                demolish_option = {
-                    'text': f"Demolish Plot{self._format_cost(cost)}{self._format_time(time)}",
-                    'action': 'demolish', 
-                    'is_enabled': can_demolish}
-                if not can_demolish:
-                    demolish_option['disabled_reason'] = "Not enough resources."
-                options.append(demolish_option)
-
-        return options
+        self.side_panel_component.current_view = self.side_panel_component.SidePanelView.DEFAULT
+        self.side_panel_component.selected_building_for_details = None
 
     def screen_to_grid(self, screen_pos: tuple[int, int]) -> Optional[Position]:
         """Converts a screen coordinate to a city grid coordinate, if applicable."""
@@ -421,6 +252,14 @@ class UIManager:
             self.queue_item_remove_button_rects.append(self.get_build_queue_item_remove_button_rect(i))
             self.queue_item_up_button_rects.append(self.get_build_queue_item_up_button_rect(i))
             self.queue_item_down_button_rects.append(self.get_build_queue_item_down_button_rect(i))
+
+    def _format_time(self, seconds: float) -> str:
+        """Formats seconds into a string like '[1m 25s]'."""
+        if seconds <= 0: return ""
+        hours = int(seconds // (60 * 60))
+        mins = int(seconds // 60)
+        secs = int(seconds % 60)
+        return f"{hours}h {mins}m {secs}s"
 
     def update_lobby_buttons(self, sessions: dict):
         """Create and position buttons for the lobby screen."""

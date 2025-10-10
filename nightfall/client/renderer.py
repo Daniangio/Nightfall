@@ -70,7 +70,7 @@ class Renderer:
         self.draw_top_bar(ui_manager)
 
     def draw_text(self, text, pos, font, color=C_WHITE):
-        surface = font.render(text, True, color)
+        surface = font.render(str(text), True, color)
         self.screen.blit(surface, pos)
 
     def draw_top_bar(self, ui_manager):
@@ -188,33 +188,6 @@ class Renderer:
         if selected_tile:
             rect = ui_manager.get_city_tile_rect(selected_tile.x, selected_tile.y)
             pygame.draw.rect(self.screen, C_CYAN, rect, 3)
-        
-        self.draw_context_menu(city, ui_manager)
-
-    def draw_scroll_button(self, rect, text, is_enabled):
-        """Draws a single scroll arrow button."""
-        color = C_BLUE if is_enabled else C_DARK_GRAY
-        text_color = C_WHITE if is_enabled else C_LIGHT_GRAY
-        pygame.draw.rect(self.screen, color, rect, border_radius=5)
-        text_surf = self.font_m.render(text, True, text_color)
-        text_rect = text_surf.get_rect(center=rect.center)
-        self.screen.blit(text_surf, text_rect)
-
-    def draw_context_menu(self, city, ui_manager):
-        if not ui_manager.context_menu:
-            return
-            
-        # Don't draw menu if an action is already queued for this tile
-        # This logic is now handled inside UIManager._get_context_menu_options_data
-        # pos = ui_manager.context_menu['position']
-        # if any(hasattr(a, 'position') and a.position == pos for a in city.build_queue):
-        #     return
-            
-        for option in ui_manager.context_menu['options']:
-            color = C_BLUE if option['is_enabled'] else C_GRAY
-            text_color = C_WHITE if option['is_enabled'] else C_LIGHT_GRAY
-            pygame.draw.rect(self.screen, color, option['rect'], border_radius=5)
-            self.draw_text(option['text'], (option['rect'].x + 10, option['rect'].y + 10), self.font_s, text_color)
     
     def draw_status_screen(self, message):
         self.screen.fill(C_BLACK)
