@@ -49,6 +49,10 @@ class InputHandler:
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1: # Left click
                     return self._handle_mouse_up(event.pos, predicted_state, action_queue)
+                elif event.button == 4: # Scroll up
+                    self._handle_mouse_wheel(1, event.pos)
+                elif event.button == 5: # Scroll down
+                    self._handle_mouse_wheel(-1, event.pos)
             elif event.type == pygame.MOUSEMOTION:
                 self._handle_mouse_motion(event.pos, event.buttons, action_queue)
 
@@ -121,7 +125,7 @@ class InputHandler:
         # A drag only starts if the mouse moves while the button is down,
         # and a drag start position has been recorded.
         if self.ui_manager.drag_start_pos and buttons[0]:
-            from nightfall.client.renderer import WORLD_TILE_SIZE, CITY_TILE_SIZE
+            from nightfall.client.config_ui import WORLD_TILE_SIZE, TILE_WIDTH, TILE_HEIGHT
 
             dx = mouse_pos[0] - self.ui_manager.drag_start_pos[0]
             dy = mouse_pos[1] - self.ui_manager.drag_start_pos[1]
@@ -144,11 +148,59 @@ class InputHandler:
                 city = self.ui_manager.game_state_for_input.cities.get(city_id)
                 if city: # Clamp dragging to city map boundaries
                     city_map = city.city_map
-                    max_x = city_map.width * CITY_TILE_SIZE - self.ui_manager.main_view_rect.width
-                    max_y = city_map.height * CITY_TILE_SIZE - (self.ui_manager.main_view_rect.height - self.ui_manager.top_bar_rect.height)
+                    zoom = self.ui_manager.city_zoom_level
+                    map_pixel_width = city_map.width * TILE_WIDTH * zoom
+                    map_pixel_height = city_map.height * TILE_HEIGHT * zoom
+                    
+                    max_x = max(0, map_pixel_width - self.ui_manager.main_view_rect.width)
+                    max_y = max(0, map_pixel_height - (self.ui_manager.main_view_rect.height - self.ui_manager.top_bar_rect.height))
                     clamped_x = max(0, min(new_x, max_x))
                     clamped_y = max(0, min(new_y, max_y))
                     self.ui_manager.city_camera_offset = Position(clamped_x, clamped_y)
+
+    def _handle_mouse_wheel(self, direction: int, mouse_pos: tuple[int, int]):
+        """Handles zooming with the mouse wheel."""
+        from nightfall.client.config_ui import MIN_ZOOM, MAX_ZOOM, ZOOM_INCREMENT, WORLD_TILE_SIZE, TILE_WIDTH, TILE_HEIGHT, TOP_BAR_HEIGHT
+
+        if not self._is_in_main_view(mouse_pos):
+            return
+
+        if self.ui_manager.active_view == ActiveView.WORLD_MAP:
+            old_zoom = self.ui_manager.world_zoom_level
+            new_zoom = old_zoom + direction * ZOOM_INCREMENT
+            self.ui_manager.world_zoom_level = max(MIN_ZOOM, min(MAX_ZOOM, new_zoom))
+            zoom_factor = self.ui_manager.world_zoom_level / old_zoom
+
+            # Get world coordinates of the mouse position before zoom
+            mouse_world_x = (mouse_pos[0] + self.ui_manager.camera_offset.x)
+            mouse_world_y = (mouse_pos[1] - TOP_BAR_HEIGHT + self.ui_manager.camera_offset.y)
+
+            # Calculate new camera offset to keep the mouse position fixed relative to the world
+            new_cam_x = mouse_world_x * zoom_factor - mouse_pos[0]
+            new_cam_y = mouse_world_y * zoom_factor - (mouse_pos[1] - TOP_BAR_HEIGHT)
+            self.ui_manager.camera_offset = Position(new_cam_x, new_cam_y)
+
+        elif self.ui_manager.active_view == ActiveView.CITY_VIEW:
+            old_zoom = self.ui_manager.city_zoom_level
+            new_zoom = old_zoom + direction * ZOOM_INCREMENT
+            self.ui_manager.city_zoom_level = max(MIN_ZOOM, min(MAX_ZOOM, new_zoom))
+            zoom_factor = self.ui_manager.city_zoom_level / old_zoom
+
+            # --- Center zoom on mouse cursor ---
+            # 1. Get the world-space coordinates of the mouse cursor *before* the zoom.
+            mouse_world_x = (mouse_pos[0] + self.ui_manager.city_camera_offset.x)
+            mouse_world_y = (mouse_pos[1] - TOP_BAR_HEIGHT + self.ui_manager.city_camera_offset.y)
+
+            # 2. Calculate the new world-space coordinates after zoom.
+            new_mouse_world_x = mouse_world_x * zoom_factor
+            new_mouse_world_y = mouse_world_y * zoom_factor
+
+            # 3. Calculate the new camera offset that places the new world-space
+            #    coordinates back under the (unchanged) mouse cursor position.
+            new_cam_x = new_mouse_world_x - mouse_pos[0]
+            new_cam_y = new_mouse_world_y - (mouse_pos[1] - TOP_BAR_HEIGHT)
+
+            self.ui_manager.city_camera_offset = Position(new_cam_x, new_cam_y)
 
     def _handle_mouse_click(self, mouse_pos: tuple[int, int], state: GameState, action_queue: list) -> Optional[dict]:
         """Handles a single, discrete mouse click (not a drag)."""
@@ -174,10 +226,11 @@ class InputHandler:
 
     def _handle_world_map_click(self, mouse_pos: tuple[int, int], state: GameState) -> Optional[dict]:
         """Handles clicks when in the World Map view."""
-        from nightfall.client.renderer import WORLD_TILE_SIZE
+        from nightfall.client.config_ui import WORLD_TILE_SIZE, TOP_BAR_HEIGHT
         
-        world_x = mouse_pos[0] + self.ui_manager.camera_offset.x
-        world_y = mouse_pos[1] - self.ui_manager.top_bar_rect.height + self.ui_manager.camera_offset.y
+        zoom = self.ui_manager.world_zoom_level
+        world_x = (mouse_pos[0] + self.ui_manager.camera_offset.x) / zoom
+        world_y = (mouse_pos[1] - TOP_BAR_HEIGHT + self.ui_manager.camera_offset.y) / zoom
         grid_x, grid_y = world_x // WORLD_TILE_SIZE, world_y // WORLD_TILE_SIZE
         clicked_pos = Position(grid_x, grid_y)
 

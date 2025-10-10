@@ -1,5 +1,6 @@
 from typing import Optional
 from nightfall.core.common.datatypes import Position
+from nightfall.client.config_ui import FONT_S, FONT_M, TOP_BAR_HEIGHT, SPLITTER_WIDTH, QUEUE_SPACING, MIN_ZOOM, MAX_ZOOM, ZOOM_INCREMENT, TILE_WIDTH, TILE_HEIGHT
 from nightfall.client.enums import ActiveView
 from nightfall.client.ui.components.panel_component import SidePanelComponent
 
@@ -10,12 +11,10 @@ import pygame
 
 # --- Default Layout Constants ---
 # These are used for initialization and as reference points for resizing.
-DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT = 640, 480
-TOP_BAR_HEIGHT = 40
-DEFAULT_SIDE_PANEL_WIDTH = 450
-MIN_SIDE_PANEL_WIDTH = 300
+DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT = 1280, 720 # This can stay here as it's for the initial window
+DEFAULT_SIDE_PANEL_WIDTH = 320
+MIN_SIDE_PANEL_WIDTH = 250
 MAX_SIDE_PANEL_WIDTH_RATIO = 0.6 # 60% of screen width
-SPLITTER_WIDTH = 8
 
 class UIManager:
     """
@@ -28,9 +27,9 @@ class UIManager:
         # UI State
         self.active_view = ActiveView.WORLD_MAP
         self.viewed_city_id: Optional[str] = None
-        self.font_s = pygame.font.Font(None, 24)
+        self.font_s = FONT_S
         self.orders_sent = False
-        self.font_m = pygame.font.Font(None, 32)
+        self.font_m = FONT_M
         self.game_state_for_input: Optional[GameState] = None # Hack for input handler
 
         # Camera and dragging state for map views
@@ -39,6 +38,11 @@ class UIManager:
         self.is_dragging = False
         self.drag_start_pos = None
         self.drag_start_camera_offset = None
+
+        # --- Zoom State ---
+        self.world_zoom_level = 1.0
+        self.city_zoom_level = 1.0
+
 
         # --- UI Rects ---
         # These will be recalculated on window resize
@@ -112,25 +116,25 @@ class UIManager:
         self.top_bar_rect = pygame.Rect(0, 0, main_view_width, TOP_BAR_HEIGHT)
         self.splitter_rect = pygame.Rect(main_view_width - (SPLITTER_WIDTH // 2), 0, SPLITTER_WIDTH, self.screen_height)
 
-        self.top_bar_buttons['view_world'] = pygame.Rect(10, 5, 120, 30)
-        self.top_bar_buttons['view_city'] = pygame.Rect(140, 5, 120, 30)
-        self.buttons['exit_session'] = pygame.Rect(self.side_panel_rect.right - 160, 5, 150, 30)
-        self.resource_panel_rect = pygame.Rect(self.side_panel_rect.x + 10, 100, self.side_panel_rect.width - 20, 120)
+        self.top_bar_buttons['view_world'] = pygame.Rect(10, 5, 100, 25)
+        self.top_bar_buttons['view_city'] = pygame.Rect(120, 5, 100, 25)
+        self.buttons['exit_session'] = pygame.Rect(self.side_panel_rect.right - 130, 5, 120, 25)
+        self.resource_panel_rect = pygame.Rect(self.side_panel_rect.x + 10, 50, self.side_panel_rect.width - 20, 95)
         
         self.update_queue_layouts(action_queue if action_queue is not None else [])
 
     def update_queue_layouts(self, build_action_queue: list):
         """Calculates the layout for the build and unit queue panels."""
         # --- Constants for queue panels ---
-        queue_header_height = 40 # Space for title
-        item_height = 30 # Height of one queue item
+        queue_header_height = 30 # Space for title
+        item_height = 25 # Height of one queue item
         scroll_button_space = 35 # Extra padding needed if scroll buttons are visible
         min_panel_height = queue_header_height
         
         # --- Calculate available space for both queues ---
         total_available_y_start = self.resource_panel_rect.bottom + 10
         total_available_y_end = self.screen_height - 10 # End of the panel
-        total_available_height = total_available_y_end - total_available_y_start
+        total_available_height = total_available_y_end - total_available_y_start - QUEUE_SPACING
 
         # --- Determine required height for each queue based on content ---
         build_queue_len = len(build_action_queue)
@@ -161,8 +165,10 @@ class UIManager:
         panel_x = self.side_panel_rect.x + 10
         panel_width = self.side_panel_rect.width - 20
         self.build_queue_panel_rect = pygame.Rect(panel_x, total_available_y_start, panel_width, build_queue_height)
-        self.queue_splitter_rect = pygame.Rect(panel_x, self.build_queue_panel_rect.bottom, panel_width, SPLITTER_WIDTH)
-        self.unit_queue_panel_rect = pygame.Rect(panel_x, self.queue_splitter_rect.bottom, panel_width, unit_queue_height)
+        
+        splitter_y = self.build_queue_panel_rect.bottom + (QUEUE_SPACING // 2)
+        self.queue_splitter_rect = pygame.Rect(panel_x, splitter_y, panel_width, SPLITTER_WIDTH)
+        self.unit_queue_panel_rect = pygame.Rect(panel_x, self.queue_splitter_rect.bottom + (QUEUE_SPACING // 2), panel_width, unit_queue_height)
 
         # --- Calculate visible items (and if scroll buttons are needed) ---
         build_panel_content_area = self.build_queue_panel_rect.height - queue_header_height
@@ -184,10 +190,14 @@ class UIManager:
     def update_side_panel_width(self, new_width: int, action_queue: list):
         self.side_panel_width = new_width
         self.on_resize(self.screen_width, self.screen_height, action_queue)
-
-    def get_city_tile_rect(self, x, y):
-        from nightfall.client.renderer import CITY_TILE_SIZE
-        return pygame.Rect(x * CITY_TILE_SIZE - self.city_camera_offset.x, y * CITY_TILE_SIZE - self.city_camera_offset.y + TOP_BAR_HEIGHT, CITY_TILE_SIZE, CITY_TILE_SIZE)
+    
+    def get_city_tile_rect(self, x: int, y: int) -> pygame.Rect:
+        """Calculates the on-screen rect for a city tile, including zoom and camera offset."""
+        zoomed_tile_width = TILE_WIDTH * self.city_zoom_level
+        zoomed_tile_height = TILE_HEIGHT * self.city_zoom_level
+        screen_x = x * zoomed_tile_width - self.city_camera_offset.x
+        screen_y = y * zoomed_tile_height - self.city_camera_offset.y + TOP_BAR_HEIGHT
+        return pygame.Rect(screen_x, screen_y, zoomed_tile_width, zoomed_tile_height)
 
     def clear_selection(self):
         """Clears the selected tile and resets the side panel view."""
@@ -195,25 +205,28 @@ class UIManager:
         self.side_panel_component.current_view = self.side_panel_component.SidePanelView.DEFAULT
         self.side_panel_component.selected_building_for_details = None
 
-    def screen_to_grid(self, screen_pos: tuple[int, int]) -> Optional[Position]:
+    def screen_to_grid(self, screen_pos_in: tuple[int, int]) -> Optional[Position]:
         """Converts a screen coordinate to a city grid coordinate, if applicable."""
-        from nightfall.client.renderer import CITY_TILE_SIZE
-
         # Check if click is within the main view area, below the top bar
-        if not self.main_view_rect.collidepoint(screen_pos) or screen_pos[1] < TOP_BAR_HEIGHT:
+        if not self.main_view_rect.collidepoint(screen_pos_in) or screen_pos_in[1] < TOP_BAR_HEIGHT:
             return None
 
-        local_x, local_y = screen_pos[0] + self.city_camera_offset.x, screen_pos[1] - TOP_BAR_HEIGHT + self.city_camera_offset.y
+        zoomed_tile_width = TILE_WIDTH * self.city_zoom_level
+        zoomed_tile_height = TILE_HEIGHT * self.city_zoom_level
 
-        grid_x = local_x // CITY_TILE_SIZE
-        grid_y = local_y // CITY_TILE_SIZE
+        # Adjust for camera offset
+        world_x = screen_pos_in[0] + self.city_camera_offset.x
+        world_y = screen_pos_in[1] - TOP_BAR_HEIGHT + self.city_camera_offset.y
+
+        grid_x = int(world_x // zoomed_tile_width)
+        grid_y = int(world_y // zoomed_tile_height)
         return Position(grid_x, grid_y)
 
     def get_build_queue_item_rect(self, item_index: int) -> pygame.Rect:
         """Gets the rect for the entire queue item row."""
         # item_index here is the VISIBLE index (0, 1, 2...)
         visible_index = item_index
-        item_y = self.build_queue_panel_rect.y + 40 + visible_index * 30
+        item_y = self.build_queue_panel_rect.y + 30 + visible_index * 25
         return pygame.Rect(self.build_queue_panel_rect.x + 10, item_y, self.build_queue_panel_rect.width - 20, 25)
 
     def get_build_queue_item_remove_button_rect(self, item_index: int) -> pygame.Rect:

@@ -175,6 +175,30 @@ class Simulator:
 
         return predicted_state
 
+    def calculate_building_production(self, building: Building, position: Position, city_map: CityMap) -> Resources:
+        """
+        Calculates the resource production for a single building,
+        including its adjacency bonuses.
+        """
+        building_data = BUILDING_DATA.get(building.type)
+        if not building_data or 'production' not in building_data:
+            return Resources()
+
+        base_prod = building_data['production'].get(building.level, Resources())
+        adjacency_bonus_multiplier = 1.0
+
+        if 'adjacency_bonus' in building_data:
+            for neighbor_pos in city_map.get_neighbors(position.x, position.y):
+                neighbor_tile = city_map.get_tile(neighbor_pos.x, neighbor_pos.y)
+                if neighbor_tile and neighbor_tile.terrain.name in building_data['adjacency_bonus']:
+                    adjacency_bonus_multiplier += building_data['adjacency_bonus'][neighbor_tile.terrain.name]
+
+        return Resources(
+            food=round(base_prod.food * adjacency_bonus_multiplier),
+            wood=round(base_prod.wood * adjacency_bonus_multiplier),
+            iron=round(base_prod.iron * adjacency_bonus_multiplier)
+        )
+
     def calculate_resource_production(self, game_state: GameState, city: City) -> Resources:
         """
         Calculates the total resource production for a single city,
@@ -189,22 +213,7 @@ class Simulator:
                 if not tile or not tile.building:
                     continue
 
-                building = tile.building
-                building_data = BUILDING_DATA.get(building.type)
-                if not building_data or 'production' not in building_data:
-                    continue
-
-                base_prod = building_data['production'].get(building.level, Resources())
-                adjacency_bonus_multiplier = 1.0
-
-                if 'adjacency_bonus' in building_data:
-                    for neighbor_pos in city_map.get_neighbors(x, y):
-                        neighbor_tile = city_map.get_tile(neighbor_pos.x, neighbor_pos.y)
-                        if neighbor_tile and neighbor_tile.terrain.name in building_data['adjacency_bonus']:
-                            adjacency_bonus_multiplier += building_data['adjacency_bonus'][neighbor_tile.terrain.name]
-
-                total_production.food += round(base_prod.food * adjacency_bonus_multiplier)
-                total_production.wood += round(base_prod.wood * adjacency_bonus_multiplier)
-                total_production.iron += round(base_prod.iron * adjacency_bonus_multiplier)
+                building_production = self.calculate_building_production(tile.building, tile.position, city_map)
+                total_production += building_production
 
         return total_production

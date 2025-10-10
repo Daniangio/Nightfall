@@ -1,12 +1,16 @@
 from enum import Enum, auto
 from typing import Optional, TYPE_CHECKING, List
 import pygame
+from nightfall.client.config_ui import (
+    C_GRAY, C_RED, C_RED_HOVER, C_GREEN, C_WHITE, C_YELLOW, C_LIGHT_GRAY, C_BLUE, C_DARK_BLUE, FONT_XS
+)
 
 from nightfall.client.ui.components.base_component import BaseComponent
 from nightfall.client.ui.components.queue_components import BuildQueueComponent, UnitQueueComponent
 from nightfall.core.common.enums import BuildingType, CityTerrainType
 from nightfall.core.common.game_data import BUILDING_DATA, DEMOLISH_COST_BUILDING, DEMOLISH_COST_RESOURCE
 from nightfall.core.actions.city_actions import BuildBuildingAction, UpgradeBuildingAction, DemolishAction
+from nightfall.core.components.city import Building
 
 if TYPE_CHECKING:
     # This block is only read by type checkers, not at runtime
@@ -14,21 +18,13 @@ if TYPE_CHECKING:
     from nightfall.client.ui_manager import UIManager
     from nightfall.core.state.game_state import GameState
 
-# Colors - It's good practice for components to define or import their own colors
-C_GRAY = (50, 50, 50)
-C_RED = (200, 0, 0)
-C_GREEN = (0, 200, 0)
-C_WHITE = (255, 255, 255)
-C_YELLOW = (255, 215, 0)
-C_LIGHT_GRAY = (150, 150, 150)
-C_BLUE = (65, 105, 225)
-
 class SidePanelView(Enum):
     DEFAULT = auto() # The normal view with queues
     BUILD_LIST = auto() # Show list of buildings for an empty tile
     BUILDING_DETAILS = auto() # Show details for a specific building to build
     EXISTING_BUILDING_DETAILS = auto() # Show details for an existing building
     RESOURCE_PLOT_DETAILS = auto() # Show details for a resource plot (forest, iron)
+    TERRAIN_DETAILS = auto() # Show details for non-interactive terrain like water
 
 class ResourcePanelComponent(BaseComponent):
     def handle_event(self, event: pygame.event.Event, *args, **kwargs) -> Optional[dict]:
@@ -38,23 +34,27 @@ class ResourcePanelComponent(BaseComponent):
         resource_rect = ui_manager.resource_panel_rect
         pygame.draw.rect(screen, (30,30,30), resource_rect, border_radius=8)
         
-        res_y = resource_rect.y + 15
+        res_y = resource_rect.y + 10
         res = city.resources
         
         font_s = ui_manager.font_s
+        font_xs = FONT_XS
         
         # Helper to draw text
         def draw_text(text, pos, font=font_s, color=C_WHITE):
             surface = font.render(text, True, color)
             screen.blit(surface, pos)
 
-        draw_text(f"Food: {int(res.food)} / {int(city.max_resources.food)} (+{production.food if production else 0})", (resource_rect.x + 20, res_y))
-        res_y += 25
-        draw_text(f"Wood: {int(res.wood)} / {int(city.max_resources.wood)} (+{production.wood if production else 0})", (resource_rect.x + 20, res_y))
-        res_y += 25
-        draw_text(f"Iron: {int(res.iron)} / {int(city.max_resources.iron)} (+{production.iron if production else 0})", (resource_rect.x + 20, res_y))
-        res_y += 25
-        draw_text(f"Buildings: {city.num_buildings} / {city.max_buildings}", (resource_rect.x + 20, res_y))
+        draw_text(f"Food: {int(res.food)} / {int(city.max_resources.food)}", (resource_rect.x + 15, res_y))
+        draw_text(f"(+{production.food if production else 0}/hr)", (resource_rect.x + 200, res_y), font=font_xs, color=C_GREEN)
+        res_y += 20
+        draw_text(f"Wood: {int(res.wood)} / {int(city.max_resources.wood)}", (resource_rect.x + 15, res_y))
+        draw_text(f"(+{production.wood if production else 0}/hr)", (resource_rect.x + 200, res_y), font=font_xs, color=C_GREEN)
+        res_y += 20
+        draw_text(f"Iron: {int(res.iron)} / {int(city.max_resources.iron)}", (resource_rect.x + 15, res_y))
+        draw_text(f"(+{production.iron if production else 0}/hr)", (resource_rect.x + 200, res_y), font=font_xs, color=C_GREEN)
+        res_y += 20
+        draw_text(f"Buildings: {city.num_buildings} / {city.max_buildings}", (resource_rect.x + 15, res_y))
 
 
 class SidePanelComponent(BaseComponent):
@@ -222,9 +222,10 @@ class SidePanelComponent(BaseComponent):
                  self.current_view = SidePanelView.BUILD_LIST
         elif tile.terrain in [CityTerrainType.FOREST_PLOT, CityTerrainType.IRON_DEPOSIT]:
             self.current_view = SidePanelView.RESOURCE_PLOT_DETAILS
-        else:
-            # Water, Empty, etc. - just go back to default
-            self.ui_manager.clear_selection()
+        elif tile.terrain in [CityTerrainType.WATER]:
+            self.current_view = SidePanelView.TERRAIN_DETAILS
+        else: # Empty tiles, etc.
+            self.ui_manager.clear_selection() # Go back to default
 
     def draw(self, screen: pygame.Surface, game_state: "GameState", city, production, action_queue, simulator):
         side_panel_rect = self.ui_manager.side_panel_rect
@@ -243,8 +244,11 @@ class SidePanelComponent(BaseComponent):
 
         # --- Draw Panel Header ---
         screen.blit(self.font_m.render(f"City: {city.name}", True, C_WHITE), (side_panel_rect.x + 20, 20))
+        
         exit_rect = self.ui_manager.buttons['exit_session']
-        pygame.draw.rect(screen, C_RED, exit_rect, border_radius=5)
+        is_hovered = exit_rect.collidepoint(pygame.mouse.get_pos())
+        pygame.draw.rect(screen, C_RED_HOVER if is_hovered else C_RED, exit_rect, border_radius=4)
+        pygame.draw.rect(screen, C_WHITE, exit_rect, 1, border_radius=4)
         text_surf = self.font_s.render("Exit to Lobby", True, C_WHITE)
         screen.blit(text_surf, text_surf.get_rect(center=exit_rect.center))
 
@@ -259,6 +263,8 @@ class SidePanelComponent(BaseComponent):
             self._draw_existing_building_view(screen, city, game_state, simulator)
         elif self.current_view == SidePanelView.RESOURCE_PLOT_DETAILS:
             self._draw_resource_plot_view(screen, city)
+        elif self.current_view == SidePanelView.TERRAIN_DETAILS:
+            self._draw_terrain_details_view(screen, city)
 
     def _draw_default_view(self, screen, game_state, city, production, simulator, action_queue):
         """Draws the standard view with resource panel and queues."""
@@ -277,18 +283,22 @@ class SidePanelComponent(BaseComponent):
 
         self.build_list_item_rects.clear()
         buildable_types = self._get_buildable_types()
-        y_pos = 100
+        y_pos = 90
+        mouse_pos = pygame.mouse.get_pos()
 
         for b_type in buildable_types:
-            item_rect = pygame.Rect(panel_rect.x + 10, y_pos, panel_rect.width - 20, 40)
-            pygame.draw.rect(screen, C_BLUE, item_rect, border_radius=5)
+            item_rect = pygame.Rect(panel_rect.x + 10, y_pos, panel_rect.width - 20, 35)
+            is_hovered = item_rect.collidepoint(mouse_pos)
+            
+            pygame.draw.rect(screen, C_DARK_BLUE if is_hovered else C_BLUE, item_rect, border_radius=4)
+            pygame.draw.rect(screen, C_LIGHT_GRAY, item_rect, 1, border_radius=4)
             
             building_name = b_type.name.replace('_', ' ').title()
             text_surf = self.font_s.render(building_name, True, C_WHITE)
-            screen.blit(text_surf, (item_rect.x + 10, item_rect.y + 10))
+            screen.blit(text_surf, text_surf.get_rect(centery=item_rect.centery, left=item_rect.left + 10))
 
             self.build_list_item_rects.append(item_rect)
-            y_pos += 50
+            y_pos += 45
 
     def _draw_building_details_view(self, screen: pygame.Surface, city, game_state, simulator):
         """Draws details for a building selected from the build list."""
@@ -297,12 +307,53 @@ class SidePanelComponent(BaseComponent):
         building_name = b_type.name.replace('_', ' ').title()
         self._draw_detail_panel_header(screen, f"Build: {building_name}")
 
-        # TODO: Draw detailed info like production, adjacency bonuses, etc.
-        
+        panel_rect = self.ui_manager.side_panel_rect
+        y_pos = 100
+
+        # --- Draw Description ---
+        building_data = BUILDING_DATA.get(b_type, {})
+        description = building_data.get('description', 'No description available.')
+        desc_surf = self.font_s.render(description, True, C_WHITE)
+        screen.blit(desc_surf, (panel_rect.x + 15, y_pos))
+        y_pos += 40
+
+        # --- Draw Production Info ---
+        # Calculate for the level that will be built (level 1)
+        hypothetical_building = Building(b_type, 1)
+        selected_pos = self.ui_manager.selected_city_tile
+        production = simulator.calculate_building_production(hypothetical_building, selected_pos, city.city_map)
+
+        if production.food > 0 or production.wood > 0 or production.iron > 0:
+            prod_title_surf = self.font_s.render("Production at Lvl 1:", True, C_YELLOW)
+            screen.blit(prod_title_surf, (panel_rect.x + 15, y_pos))
+            y_pos += 25
+            
+            prod_text = f"  Food: {production.food}/hr, Wood: {production.wood}/hr, Iron: {production.iron}/hr"
+            prod_surf = self.font_s.render(prod_text, True, C_WHITE)
+            screen.blit(prod_surf, (panel_rect.x + 15, y_pos))
+            y_pos += 25
+
+        # --- Draw Next Level Production Info ---
+        next_level_data = building_data.get('upgrade', {}).get(2, {})
+        if next_level_data:
+            hypothetical_building_lvl2 = Building(b_type, 2)
+            next_production = simulator.calculate_building_production(hypothetical_building_lvl2, selected_pos, city.city_map)
+            
+            if next_production.food > 0 or next_production.wood > 0 or next_production.iron > 0:
+                next_prod_title_surf = self.font_s.render("Production at Lvl 2:", True, C_LIGHT_GRAY)
+                screen.blit(next_prod_title_surf, (panel_rect.x + 15, y_pos))
+                y_pos += 25
+
+                next_prod_text = f"  Food: {next_production.food}/hr, Wood: {next_production.wood}/hr, Iron: {next_production.iron}/hr"
+                next_prod_surf = self.font_s.render(next_prod_text, True, C_LIGHT_GRAY)
+                screen.blit(next_prod_surf, (panel_rect.x + 15, y_pos))
+                y_pos += 25
+
+
         # Draw Build Button
         self._draw_action_buttons(screen, city, game_state, 'build', b_type=b_type)
 
-    def _draw_existing_building_view(self, screen: pygame.Surface, city, game_state, simulator):
+    def _draw_existing_building_view(self, screen: pygame.Surface, city, game_state: "GameState", simulator: "Simulator"):
         """Draws details for a building that is already on a tile."""
         selected_pos = self.ui_manager.selected_city_tile
         if not selected_pos: return
@@ -313,7 +364,48 @@ class SidePanelComponent(BaseComponent):
         building_name = f"{building.type.name.replace('_', ' ').title()} (Lvl {building.level})"
         self._draw_detail_panel_header(screen, building_name)
 
-        # TODO: Draw detailed info about the existing building.
+        panel_rect = self.ui_manager.side_panel_rect
+        y_pos = 100
+
+        # --- Draw Description ---
+        building_data = BUILDING_DATA.get(building.type, {})
+        description = building_data.get('description', 'No description available.')
+        desc_surf = self.font_s.render(description, True, C_WHITE)
+        screen.blit(desc_surf, (panel_rect.x + 15, y_pos))
+        y_pos += 40
+
+        # --- Draw Current Production Info ---
+        production = simulator.calculate_building_production(building, selected_pos, city.city_map)
+        if production.food > 0 or production.wood > 0 or production.iron > 0:
+            prod_title_surf = self.font_s.render("Current Production:", True, C_YELLOW)
+            screen.blit(prod_title_surf, (panel_rect.x + 15, y_pos))
+            y_pos += 25
+            
+            prod_text = f"  Food: {production.food}/hr, Wood: {production.wood}/hr, Iron: {production.iron}/hr"
+            prod_surf = self.font_s.render(prod_text, True, C_WHITE)
+            screen.blit(prod_surf, (panel_rect.x + 15, y_pos))
+            y_pos += 25
+
+        # --- Draw Next Level Production Info ---
+        next_level = building.level + 1
+        next_level_data = building_data.get('upgrade', {}).get(next_level, {})
+        if next_level_data:
+            hypothetical_building_next = Building(building.type, next_level)
+            next_production = simulator.calculate_building_production(hypothetical_building_next, selected_pos, city.city_map)
+            
+            if next_production.food > 0 or next_production.wood > 0 or next_production.iron > 0:
+                next_prod_title_surf = self.font_s.render(f"Production at Lvl {next_level}:", True, C_LIGHT_GRAY)
+                screen.blit(next_prod_title_surf, (panel_rect.x + 15, y_pos))
+                y_pos += 25
+
+                next_prod_text = f"  Food: {next_production.food}/hr, Wood: {next_production.wood}/hr, Iron: {next_production.iron}/hr"
+                next_prod_surf = self.font_s.render(next_prod_text, True, C_LIGHT_GRAY)
+                screen.blit(next_prod_surf, (panel_rect.x + 15, y_pos))
+                y_pos += 25
+        else:
+            max_lvl_surf = self.font_s.render("Max level reached.", True, C_YELLOW)
+            screen.blit(max_lvl_surf, (panel_rect.x + 15, y_pos))
+            y_pos += 25
 
         # Draw Upgrade and Demolish Buttons
         self._draw_action_buttons(screen, city, game_state, 'upgrade', building=building)
@@ -332,6 +424,17 @@ class SidePanelComponent(BaseComponent):
         # Draw Demolish Button
         self._draw_action_buttons(screen, city, None, 'demolish_plot')
 
+    def _draw_terrain_details_view(self, screen: pygame.Surface, city):
+        """Draws details for a non-interactive terrain tile like water."""
+        selected_pos = self.ui_manager.selected_city_tile
+        if not selected_pos: return
+        tile = city.city_map.get_tile(selected_pos.x, selected_pos.y)
+        if not tile: return
+
+        terrain_name = tile.terrain.name.replace('_', ' ').title()
+        self._draw_detail_panel_header(screen, terrain_name)
+        # No action buttons are drawn for this view.
+
     def _draw_detail_panel_header(self, screen: pygame.Surface, title: str):
         """Draws the common header for all detail panels (title and close button)."""
         panel_rect = self.ui_manager.side_panel_rect
@@ -342,8 +445,9 @@ class SidePanelComponent(BaseComponent):
         screen.blit(title_surf, (panel_rect.x + 10, 60))
 
         # Close button ('X')
-        close_rect = pygame.Rect(panel_rect.right - 35, 55, 25, 25)
-        pygame.draw.rect(screen, C_RED, close_rect, border_radius=5)
+        close_rect = pygame.Rect(panel_rect.right - 30, 55, 20, 20)
+        is_hovered = close_rect.collidepoint(pygame.mouse.get_pos())
+        pygame.draw.rect(screen, C_RED_HOVER if is_hovered else C_RED, close_rect, border_radius=4)
         close_surf = self.font_s.render("X", True, C_WHITE)
         screen.blit(close_surf, close_surf.get_rect(center=close_rect.center))
         self.detail_panel_buttons['close'] = close_rect
@@ -351,7 +455,7 @@ class SidePanelComponent(BaseComponent):
     def _draw_action_buttons(self, screen: pygame.Surface, city, game_state, action_type: str, **kwargs):
         """A helper to draw the Build/Upgrade/Demolish buttons and handle their enabled state."""
         panel_rect = self.ui_manager.side_panel_rect
-        button_rect = pygame.Rect(panel_rect.x + 20, panel_rect.bottom - 70, panel_rect.width - 40, 50)
+        button_rect = pygame.Rect(panel_rect.x + 20, panel_rect.bottom - 60, panel_rect.width - 40, 40)
         
         # Adjust rect for multiple buttons
         if action_type == 'upgrade':
@@ -363,6 +467,7 @@ class SidePanelComponent(BaseComponent):
         # Determine button properties and enabled state
         is_enabled = False
         text = "ACTION"
+        mouse_pos = pygame.mouse.get_pos()
         
         if action_type == 'build':
             b_type = kwargs.get('b_type')
@@ -386,8 +491,13 @@ class SidePanelComponent(BaseComponent):
             text = "Clear Plot"
 
         # Draw the button
-        color = C_BLUE if is_enabled else C_GRAY
-        pygame.draw.rect(screen, color, button_rect, border_radius=8)
+        is_hovered = button_rect.collidepoint(mouse_pos)
+        base_color = C_BLUE if is_enabled else C_GRAY
+        border_color = C_DARK_BLUE if is_enabled else C_LIGHT_GRAY
+        
+        final_color = C_DARK_BLUE if is_hovered and is_enabled else base_color
+        pygame.draw.rect(screen, final_color, button_rect, border_radius=5)
+        pygame.draw.rect(screen, border_color, button_rect, 1, border_radius=5)
         text_surf = self.font_s.render(text, True, C_WHITE)
         screen.blit(text_surf, text_surf.get_rect(center=button_rect.center))
 
