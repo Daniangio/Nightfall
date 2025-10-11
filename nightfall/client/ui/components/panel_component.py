@@ -1,5 +1,6 @@
 from enum import Enum, auto
 from typing import Optional, TYPE_CHECKING, List
+from nightfall.client.asset_manager import AssetManager
 import pygame
 from nightfall.client.config_ui import (
     C_GRAY, C_RED, C_RED_HOVER, C_GREEN, C_WHITE, C_YELLOW, C_LIGHT_GRAY, C_BLUE, C_DARK_BLUE, FONT_XS
@@ -64,6 +65,7 @@ class SidePanelComponent(BaseComponent):
         self.font_m = ui_manager.font_m
         self.font_s = ui_manager.font_s
         self.SidePanelView = SidePanelView # Make enum accessible
+        self.assets = AssetManager()
         
         # The panel owns its sub-components
         self.resource_panel = ResourcePanelComponent()
@@ -75,7 +77,7 @@ class SidePanelComponent(BaseComponent):
         self.selected_building_for_details: Optional[BuildingType] = None
         
         # --- UI element rects for the new panels ---
-        self.build_list_item_rects: List[pygame.Rect] = []
+        self.build_list_icon_rects: List[pygame.Rect] = []
         self.detail_panel_buttons: dict[str, pygame.Rect] = {}
 
     def handle_event(self, event: pygame.event.Event, game_state: "GameState", **kwargs) -> Optional[dict]:
@@ -132,7 +134,7 @@ class SidePanelComponent(BaseComponent):
         # --- Build List View ---
         if self.current_view == SidePanelView.BUILD_LIST:
             buildable = self._get_buildable_types()
-            for i, rect in enumerate(self.build_list_item_rects):
+            for i, rect in enumerate(self.build_list_icon_rects):
                 if rect.collidepoint(event.pos):
                     self.selected_building_for_details = buildable[i]
                     self.current_view = SidePanelView.BUILDING_DETAILS
@@ -286,24 +288,37 @@ class SidePanelComponent(BaseComponent):
         panel_rect = self.ui_manager.side_panel_rect
         self._draw_detail_panel_header(screen, "Build on Grass Plot")
 
-        self.build_list_item_rects.clear()
+        self.build_list_icon_rects.clear()
         buildable_types = self._get_buildable_types()
-        y_pos = 90
         mouse_pos = pygame.mouse.get_pos()
 
-        for b_type in buildable_types:
-            item_rect = pygame.Rect(panel_rect.x + 10, y_pos, panel_rect.width - 20, 35)
-            is_hovered = item_rect.collidepoint(mouse_pos)
-            
-            pygame.draw.rect(screen, C_DARK_BLUE if is_hovered else C_BLUE, item_rect, border_radius=4)
-            pygame.draw.rect(screen, C_LIGHT_GRAY, item_rect, 1, border_radius=4)
-            
-            building_name = b_type.name.replace('_', ' ').title()
-            text_surf = self.font_s.render(building_name, True, C_WHITE)
-            screen.blit(text_surf, text_surf.get_rect(centery=item_rect.centery, left=item_rect.left + 10))
+        # --- Grid Layout Constants ---
+        ICON_SIZE = (64, 64)
+        ICON_PADDING = 15
+        
+        # --- Calculate Grid Properties ---
+        available_width = panel_rect.width - (ICON_PADDING * 2)
+        icons_per_row = max(1, available_width // (ICON_SIZE[0] + ICON_PADDING))
+        row_width = icons_per_row * ICON_SIZE[0] + (icons_per_row - 1) * ICON_PADDING
+        start_x = panel_rect.x + (panel_rect.width - row_width) / 2
+        y_pos = 100
 
-            self.build_list_item_rects.append(item_rect)
-            y_pos += 45
+        for i, b_type in enumerate(buildable_types):
+            row = i // icons_per_row
+            col = i % icons_per_row
+
+            icon_x = start_x + col * (ICON_SIZE[0] + ICON_PADDING)
+            icon_y = y_pos + row * (ICON_SIZE[1] + ICON_PADDING)
+            icon_rect = pygame.Rect(icon_x, icon_y, ICON_SIZE[0], ICON_SIZE[1])
+            
+            # Draw icon
+            sprite_name = f"building_{b_type.name.lower()}_1.png"
+            icon_img = self.assets.get_image(sprite_name, scale=ICON_SIZE)
+            screen.blit(icon_img, icon_rect.topleft)
+            if icon_rect.collidepoint(mouse_pos):
+                pygame.draw.rect(screen, C_YELLOW, icon_rect, 2, border_radius=4)
+
+            self.build_list_icon_rects.append(icon_rect)
 
     def _draw_building_details_view(self, screen: pygame.Surface, city, game_state, simulator):
         """Draws details for a building selected from the build list."""
@@ -313,11 +328,13 @@ class SidePanelComponent(BaseComponent):
         self._draw_detail_panel_header(screen, f"Build: {building_name}")
 
         panel_rect = self.ui_manager.side_panel_rect
-        y_pos = 100
 
-        # --- Draw Description ---
+        # --- Draw Icon and Description ---
+        sprite_name = f"building_{b_type.name.lower()}_1.png"
+        y_pos = self._draw_icon_and_get_next_pos(screen, sprite_name, 90)
+
         building_data = BUILDING_DATA.get(b_type, {})
-        description = building_data.get('description', 'No description available.')
+        description = building_data.get('description', 'No description available.') # You need to add this to game_data.py
         desc_surf = self.font_s.render(description, True, C_WHITE)
         screen.blit(desc_surf, (panel_rect.x + 15, y_pos))
         y_pos += 40
@@ -415,10 +432,11 @@ class SidePanelComponent(BaseComponent):
         building_name = f"{building_name_str}{building_level_text}"
         self._draw_detail_panel_header(screen, building_name)
 
-        tile = city.city_map.get_tile(selected_pos.x, selected_pos.y)
-
-        panel_rect = self.ui_manager.side_panel_rect
-        y_pos = 100
+        # --- Draw Icon and Description ---
+        if building:
+            sprite_name = f"building_{building.type.name.lower()}_{building.level}.png"
+            y_pos = self._draw_icon_and_get_next_pos(screen, sprite_name, 90)
+            panel_rect = self.ui_manager.side_panel_rect
 
         # --- Draw Description ---
         if building:
@@ -494,6 +512,10 @@ class SidePanelComponent(BaseComponent):
         plot_name = tile.terrain.name.replace('_', ' ').title()
         self._draw_detail_panel_header(screen, plot_name)
 
+        # --- Draw Icon and get next position ---
+        sprite_name = f"resource_{tile.terrain.name.lower()}.png"
+        self._draw_icon_and_get_next_pos(screen, sprite_name, 90)
+
         if queued_action:
             # If a demolish action is queued, show the Cancel button
             self._draw_action_buttons(screen, city, None, 'cancel')
@@ -510,6 +532,9 @@ class SidePanelComponent(BaseComponent):
 
         terrain_name = tile.terrain.name.replace('_', ' ').title()
         self._draw_detail_panel_header(screen, terrain_name)
+        # Draw the terrain icon
+        sprite_name = f"resource_{tile.terrain.name.lower()}.png"
+        self._draw_icon_and_get_next_pos(screen, sprite_name, 90)
         # No action buttons are drawn for this view.
 
     def _draw_detail_panel_header(self, screen: pygame.Surface, title: str):
@@ -528,6 +553,15 @@ class SidePanelComponent(BaseComponent):
         close_surf = self.font_s.render("X", True, C_WHITE)
         screen.blit(close_surf, close_surf.get_rect(center=close_rect.center))
         self.detail_panel_buttons['close'] = close_rect
+
+    def _draw_icon_and_get_next_pos(self, screen: pygame.Surface, sprite_name: str, y_pos: int) -> int:
+        """Draws a centered icon in the panel and returns the y-position below it."""
+        panel_rect = self.ui_manager.side_panel_rect
+        icon_size = (64, 64)
+        icon_img = self.assets.get_image(sprite_name, scale=icon_size)
+        icon_rect = icon_img.get_rect(centerx=panel_rect.centerx, top=y_pos)
+        screen.blit(icon_img, icon_rect)
+        return icon_rect.bottom + 15
 
     def _draw_action_buttons(self, screen: pygame.Surface, city, game_state, action_type: str, **kwargs):
         """A helper to draw the Build/Upgrade/Demolish buttons and handle their enabled state."""

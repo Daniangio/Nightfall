@@ -298,15 +298,16 @@ class UIManager:
 
     def update_lobby_buttons(self, sessions: dict):
         """Create and position buttons for the lobby screen."""
+        # sessions here is just the keys, not the full dict
         self.lobby_buttons.clear()
         y_pos = 150
         # Button for creating a new session
-        self.lobby_buttons["create"] = pygame.Rect(100, y_pos, 300, 50)
+        self.lobby_buttons["create"] = pygame.Rect(self.screen_width / 2 - 150, y_pos, 300, 50)
         y_pos += 80
 
         # Buttons for each available session
-        for i, session_id in enumerate(sessions.keys()):
-            self.lobby_buttons[session_id] = pygame.Rect(100, y_pos + i * 60, 300, 50)
+        for i, session_id in enumerate(sessions):
+            self.lobby_buttons[session_id] = pygame.Rect(self.screen_width / 2 - 150, y_pos + i * 60, 300, 50)
 
     def clear_lobby_buttons(self):
         self.lobby_buttons.clear()

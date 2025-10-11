@@ -257,7 +257,11 @@ class Renderer:
 
     def draw_lobby_screen(self, ui_manager):
         self.screen.fill(C_GRAY)
-        self.draw_text("Project Nightfall - Lobby", (100, 50), self.font_m, C_WHITE)
+        title_surf = self.font_m.render("Project Nightfall - Lobby", True, C_WHITE)
+        title_rect = title_surf.get_rect(centerx=self.screen.get_width() / 2, y=50)
+        self.screen.blit(title_surf, title_rect)
+
+        ui_manager.update_lobby_buttons(ui_manager.lobby_buttons.keys())
 
         for name, rect in ui_manager.lobby_buttons.items():
             is_hovered = rect.collidepoint(pygame.mouse.get_pos())
