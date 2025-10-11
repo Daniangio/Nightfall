@@ -150,7 +150,8 @@ class City:
     num_buildings: int = 0
     max_buildings: int = 0
     max_resources: Resources = field(default_factory=Resources)
-    construction_speed_modifier: float = 1.0 # 1.0 = 100% speed
+    construction_speed_modifier: float = 1.0 # Multiplier. 1.1 = 110% speed
+    recruitment_speed_modifiers: dict = field(default_factory=dict) # e.g. {'infantry': 1.1, 'cavalry': 1.0}
     recruitment_queue: List[RecruitmentProgress] = field(default_factory=list)
     garrison: dict = field(default_factory=dict)
 
@@ -163,6 +164,7 @@ class City:
         # Reset stats before recalculating
         self.max_resources = Resources()
         self.construction_speed_modifier = 1.0
+        self.recruitment_speed_modifiers = {'infantry': 1.0, 'cavalry': 1.0}
 
         for row in self.city_map.tiles:
             for tile in row:
@@ -193,6 +195,12 @@ class City:
 
                     if 'construction_speed_bonus' in provided_stats:
                         self.construction_speed_modifier += provided_stats['construction_speed_bonus']
+
+                    if 'infantry_recruitment_speed_bonus' in provided_stats:
+                        self.recruitment_speed_modifiers['infantry'] += provided_stats['infantry_recruitment_speed_bonus']
+                    
+                    if 'cavalry_recruitment_speed_bonus' in provided_stats:
+                        self.recruitment_speed_modifiers['cavalry'] += provided_stats['cavalry_recruitment_speed_bonus']
 
         if not citadel:
             print(f"Warning: City '{self.name}' has no Citadel. Stats will be zero.")
@@ -225,6 +233,7 @@ class City:
             'resources': self.resources.__dict__,
             'build_queue': [action.to_dict() for action in self.build_queue],
             'max_resources': self.max_resources.__dict__,
+            'recruitment_speed_modifiers': self.recruitment_speed_modifiers,
             'construction_speed_modifier': self.construction_speed_modifier,
             'recruitment_queue': [progress.to_dict() for progress in self.recruitment_queue],
             'garrison': {unit_type.name: count for unit_type, count in self.garrison.items()}
@@ -252,6 +261,7 @@ class City:
             city_map=CityMap.from_dict(data['city_map']),
             resources=Resources(**data['resources']),
             max_resources=Resources(**data.get('max_resources', {})),
+            recruitment_speed_modifiers=data.get('recruitment_speed_modifiers', {'infantry': 1.0, 'cavalry': 1.0}),
             construction_speed_modifier=data.get('construction_speed_modifier', 1.0),
             build_queue=queue,
             recruitment_queue=recruitment_queue,

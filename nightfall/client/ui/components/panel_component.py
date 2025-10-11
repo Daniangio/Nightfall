@@ -184,7 +184,8 @@ class SidePanelComponent(BaseComponent):
         """Returns a list of all buildings that can be built on grass."""
         return [
             BuildingType.FARM, BuildingType.LUMBER_MILL, BuildingType.IRON_MINE,
-            BuildingType.BARRACKS, BuildingType.WAREHOUSE, BuildingType.BUILDERS_HUT
+            BuildingType.BARRACKS, BuildingType.WAREHOUSE, BuildingType.BUILDERS_HUT,
+            BuildingType.STABLES, BuildingType.DRAGON_NEST
         ]
 
     def _handle_queue_splitter_drag(self, event: pygame.event.Event, action_queue: list):
@@ -311,10 +312,19 @@ class SidePanelComponent(BaseComponent):
             icon_y = y_pos + row * (ICON_SIZE[1] + ICON_PADDING)
             icon_rect = pygame.Rect(icon_x, icon_y, ICON_SIZE[0], ICON_SIZE[1])
             
+            is_unlocked, _ = self._are_requirements_met(b_type, city)
+
             # Draw icon
             sprite_name = f"building_{b_type.name.lower()}_1.png"
             icon_img = self.assets.get_image(sprite_name, scale=ICON_SIZE)
-            screen.blit(icon_img, icon_rect.topleft)
+
+            if is_unlocked:
+                screen.blit(icon_img, icon_rect.topleft)
+            else: # If locked, draw a semi-transparent copy
+                temp_img = icon_img.copy()
+                temp_img.set_alpha(100)
+                screen.blit(temp_img, icon_rect.topleft)
+
             if icon_rect.collidepoint(mouse_pos):
                 pygame.draw.rect(screen, C_YELLOW, icon_rect, 2, border_radius=4)
 
@@ -334,7 +344,7 @@ class SidePanelComponent(BaseComponent):
         y_pos = self._draw_icon_and_get_next_pos(screen, sprite_name, 90)
 
         building_data = BUILDING_DATA.get(b_type, {})
-        description = building_data.get('description', 'No description available.') # You need to add this to game_data.py
+        description = building_data.get('description', 'No description available.')
         desc_surf = self.font_s.render(description, True, C_WHITE)
         screen.blit(desc_surf, (panel_rect.x + 15, y_pos))
         y_pos += 40
@@ -344,6 +354,17 @@ class SidePanelComponent(BaseComponent):
         hypothetical_building = Building(b_type, 1)
         selected_pos = self.ui_manager.selected_city_tile
         production = simulator.calculate_building_production(hypothetical_building, selected_pos, city.city_map)
+
+        # --- Draw Requirements ---
+        is_unlocked, req_string = self._are_requirements_met(b_type, city)
+        if not is_unlocked:
+            req_title_surf = self.font_s.render("Requires:", True, C_RED)
+            screen.blit(req_title_surf, (panel_rect.x + 15, y_pos))
+            y_pos += 25
+
+            req_surf = self.font_s.render(f"  {req_string}", True, C_LIGHT_GRAY)
+            screen.blit(req_surf, (panel_rect.x + 15, y_pos))
+            y_pos += 25
 
         if production.food > 0 or production.wood > 0 or production.iron > 0:
             prod_title_surf = self.font_s.render("Production at Lvl 1:", True, C_YELLOW)
@@ -385,6 +406,28 @@ class SidePanelComponent(BaseComponent):
 
         # Draw Build Button
         self._draw_action_buttons(screen, city, game_state, 'build', b_type=b_type)
+
+    def _are_requirements_met(self, building_type: BuildingType, city: "City") -> tuple[bool, str]:
+        """Checks if a building's requirements are met by the city."""
+        building_data = BUILDING_DATA.get(building_type, {})
+        requirements = building_data.get('requires')
+        if not requirements:
+            return True, ""
+
+        for req_b_type, req_level in requirements.items():
+            # Find the required building in the city
+            required_building_instance = None
+            for row in city.city_map.tiles:
+                for tile in row:
+                    if tile.building and tile.building.type == req_b_type:
+                        required_building_instance = tile.building
+                        break
+                if required_building_instance:
+                    break
+            
+            if not required_building_instance or required_building_instance.level < req_level:
+                return False, f"{req_b_type.name.replace('_', ' ').title()} Level {req_level}"
+        return True, ""
 
     def _get_bonus_breakdown(self, building: Building, position: "Position", city_map: "CityMap") -> list[str]:
         """Generates a list of strings describing each adjacency bonus source."""
@@ -582,8 +625,25 @@ class SidePanelComponent(BaseComponent):
         
         if action_type == 'build':
             b_type = kwargs.get('b_type')
-            cost = BUILDING_DATA[b_type]['build']['cost']
-            is_enabled = city.resources.can_afford(cost) and city.num_buildings < city.max_buildings
+            building_data = BUILDING_DATA.get(b_type, {})
+            cost = building_data.get('build', {}).get('cost')
+
+            is_unlocked, _ = self._are_requirements_met(b_type, city)
+
+            can_afford = cost and city.resources.can_afford(cost)
+            has_slot = city.num_buildings < city.max_buildings
+            
+            can_build_unique = True
+            if building_data.get('unique', False):
+                # Check if a building of this type already exists or is being built
+                already_exists = any(
+                    (tile.building and tile.building.type == b_type) or 
+                    any(isinstance(action, BuildBuildingAction) and action.building_type == b_type for action in city.build_queue)
+                    for row in city.city_map.tiles for tile in row
+                )
+                can_build_unique = not already_exists
+
+            is_enabled = can_afford and has_slot and can_build_unique and is_unlocked
             text = "Build"
         elif action_type == 'upgrade':
             building = kwargs.get('building')

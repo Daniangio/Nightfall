@@ -13,8 +13,10 @@ class BuildingType(Enum):
     LUMBER_MILL = auto()
     IRON_MINE = auto()
     BARRACKS = auto()
+    STABLES = auto()
     WAREHOUSE = auto()
     BUILDERS_HUT = auto()
+    DRAGON_NEST = auto()
 
 
 class TerrainType(Enum):
@@ -36,3 +38,6 @@ class CityTerrainType(Enum):
 class UnitType(Enum):
     """Enumeration for unit types."""
     SWORDSMAN = auto()
+    CAVALRY = auto()
+    DRAGON = auto()
+

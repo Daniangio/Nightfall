@@ -121,6 +121,7 @@ BUILDING_DATA = {
         }
     },
     BuildingType.BARRACKS: {
+        'description': 'Allows recruitment of infantry units.',
         'build': {
             'cost': Resources(food=50, wood=100, iron=80),
             'time': 5,
@@ -129,14 +130,32 @@ BUILDING_DATA = {
             2: {'cost': Resources(food=0, wood=150, iron=120), 'time': 10},
             3: {'cost': Resources(food=0, wood=250, iron=200), 'time': 10},
         },
-        # Additive bonus to recruitment speed. 0.1 = +10% speed.
-        'recruitment_speed_bonus': {
+        # Additive bonus to infantry recruitment speed. 0.1 = +10% speed.
+        'infantry_recruitment_speed_bonus': {
             1: 0.10,
             2: 0.15,
             3: 0.20,
         }
-    }
-,
+    },
+    BuildingType.STABLES: {
+        'description': 'Enables recruitment of cavalry units and speeds up their training.',
+        'requires': {
+            BuildingType.CITADEL: 2,
+        },
+        'build': {
+            'cost': Resources(food=80, wood=150, iron=100),
+            'time': 60,
+        },
+        'upgrade': {
+            2: {'cost': Resources(food=0, wood=200, iron=150), 'time': 120},
+        },
+        # Additive bonus to cavalry recruitment speed.
+        'cavalry_recruitment_speed_bonus': {
+            1: 0.10,
+            2: 0.15,
+        },
+        'enables_recruitment': [UnitType.CAVALRY]
+    },
     BuildingType.WAREHOUSE: {
         'build': {
             'cost': Resources(food=100, wood=250, iron=50),
@@ -169,15 +188,36 @@ BUILDING_DATA = {
             2: {'construction_speed_bonus': 1.10},
             3: {'construction_speed_bonus': 1.15},
         }
-    }
+    },
+    BuildingType.DRAGON_NEST: {
+        'description': 'A mythical lair. Only one may be built per city.',
+        'unique': True,
+        'requires': {
+            BuildingType.CITADEL: 3,
+        },
+        'build': {
+            'cost': Resources(food=50, wood=50, iron=50),
+            'time': 5,
+        },
+        'upgrade': {
+            2: {'cost': Resources(food=0, wood=100, iron=100), 'time': 5},
+        },
+        'enables_recruitment': [UnitType.DRAGON],
+    },
 }
 
 # Data for recruitable units
 UNIT_DATA = {
     UnitType.SWORDSMAN: {
+        'category': 'infantry',
         'cost': Resources(food=20, wood=5, iron=10),
         'base_recruit_time': 10, # in seconds per unit
-    }
+    },
+    UnitType.CAVALRY: {
+        'category': 'cavalry',
+        'cost': Resources(food=50, wood=10, iron=30),
+        'base_recruit_time': 25, # in seconds per unit
+    },
 }
 
 # Cost to demolish any building or clear a resource plot

@@ -1,5 +1,5 @@
 from nightfall.core.state.game_state import GameState
-from nightfall.core.common.game_data import BUILDING_DATA, DEMOLISH_COST_BUILDING, DEMOLISH_COST_RESOURCE
+from nightfall.core.common.game_data import BUILDING_DATA, DEMOLISH_COST_BUILDING, DEMOLISH_COST_RESOURCE, UNIT_DATA
 from nightfall.core.components.city import City, CityMap, Building
 from nightfall.core.common.datatypes import Resources, Position
 from nightfall.core.common.enums import BuildingType, CityTerrainType
@@ -68,7 +68,28 @@ class Simulator:
             city.resources.wood = min(new_resources.wood, city.max_resources.wood)
             city.resources.iron = min(new_resources.iron, city.max_resources.iron)
 
-        # 4. Process unit recruitment (would also be time-based)
+        # 4. Process unit recruitment
+        for city in game_state.cities.values():
+            if city.recruitment_queue:
+                item = city.recruitment_queue[0]
+                unit_info = UNIT_DATA.get(item.unit_type)
+                if not unit_info: continue
+
+                # Calculate recruitment points generated this time slice
+                unit_category = unit_info.get('category', 'infantry')
+                speed_modifier = city.recruitment_speed_modifiers.get(unit_category, 1.0)
+                recruitment_points_generated = time_delta * speed_modifier
+                item.progress += recruitment_points_generated
+
+                # Check if one unit is finished
+                time_per_unit = unit_info.get('base_recruit_time', 30)
+                if item.progress >= time_per_unit:
+                    item.progress -= time_per_unit # Carry over extra progress
+                    item.quantity -= 1
+                    city.garrison[item.unit_type] = city.garrison.get(item.unit_type, 0) + 1
+                    if item.quantity <= 0:
+                        city.recruitment_queue.pop(0)
+                    state_changed = True
 
         # 5. Increment turn counter (now represents a time tick)
         return state_changed

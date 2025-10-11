@@ -48,11 +48,11 @@ class AssetManager:
                 level_str, extension = parts[-1].split('.', 1)
                 if level_str.isdigit():
                     level = int(level_str)
-                    if level > 1:
+                    if level > 0:
                         # Fallback to the next lower level.
                         fallback_name = f"{'_'.join(parts[:-1])}_{level - 1}.{extension}"
                         return self._load_with_fallback(fallback_name)
-                    elif level == 1:
+                    elif level == 0:
                         # Fallback from level 1 to the base name (e.g., "building_farm.png")
                         base_name = f"{'_'.join(parts[:-1])}.{extension}"
                         return self._load_with_fallback(base_name)
