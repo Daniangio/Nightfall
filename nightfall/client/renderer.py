@@ -9,6 +9,7 @@ from nightfall.client.config_ui import (
 from nightfall.client.asset_manager import AssetManager
 from nightfall.core.common.datatypes import Position
 from nightfall.client.ui.components.panel_component import SidePanelComponent
+from nightfall.core.common.enums import CityTerrainType
 from nightfall.core.state.game_state import GameState
 from nightfall.client.enums import ActiveView
 from nightfall.core.actions.city_actions import BuildBuildingAction, UpgradeBuildingAction, DemolishAction
@@ -193,6 +194,9 @@ class Renderer:
                 if tile.building:
                     sprite_name = f"building_{tile.building.type.name.lower()}_{tile.building.level}.png"
                     building_img = self.assets.get_image(sprite_name) # Load at native resolution
+                elif tile.terrain in [CityTerrainType.FOREST_PLOT, CityTerrainType.IRON_DEPOSIT, CityTerrainType.WATER]:
+                    sprite_name = f"resource_{tile.terrain.name.lower()}.png"
+                    building_img = self.assets.get_image(sprite_name)
                 elif tile_pos_obj in queued_actions:
                     action = queued_actions[tile_pos_obj]
                     if isinstance(action, BuildBuildingAction):
