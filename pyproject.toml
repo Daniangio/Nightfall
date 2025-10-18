@@ -5,11 +5,22 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nightfall"
 version = "0.1.0"
-description = "A multi-user turn-based strategy game server and client."
+description = "A real-time strategy game server and client."
+readme = "README.md"
 requires-python = ">=3.8"
+dependencies = [
+    "pygame",
+    "importlib-resources; python_version < '3.9'",
+]
+
+[tool.setuptools]
+packages = ["nightfall"]
+
+[tool.setuptools.package-data]
+nightfall = ["**/*.json", "**/*.png"]
 
 [project.scripts]
 # This creates the 'server' command that runs the main() function in server/main.py
-server = "nightfall.server.main:main"
+nightfall-server = "nightfall.server.main:main"
 # This creates the 'client' command that runs the main() function in client/main.py
-client = "nightfall.client.main:main"
+nightfall-client = "nightfall.client.main:main"

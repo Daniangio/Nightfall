@@ -1,7 +1,12 @@
 import logging
 import pygame
-import os
 from typing import Dict
+
+try:
+    # Use the modern importlib.resources for Python 3.9+
+    from importlib.resources import files
+except ImportError:
+    from importlib_resources import files # Fallback for Python < 3.9
 
 class AssetManager:
     """
@@ -15,11 +20,12 @@ class AssetManager:
             cls._instance = super(AssetManager, cls).__new__(cls)
         return cls._instance
 
-    def __init__(self, base_path=os.path.join('assets', 'sprites')):
+    def __init__(self):
         # The __init__ will be called every time AssetManager() is invoked,
         # but the attributes are on the instance, so they are only set once.
         if not hasattr(self, 'initialized'):
-            self.base_path = base_path
+            # This path now correctly refers to the assets directory inside the package
+            self.base_path = files('nightfall') / 'assets' / 'sprites'
             self.images: Dict[str, pygame.Surface] = {}
             self.initialized = True
             print("AssetManager initialized.")
@@ -35,7 +41,7 @@ class AssetManager:
 
         # Try to load the file from disk.
         try:
-            path = os.path.join(self.base_path, name)
+            path = self.base_path / name
             loaded_image = pygame.image.load(path).convert_alpha()
             self.images[name] = loaded_image # Cache the successful load
             return loaded_image
